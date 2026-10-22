@@ -1,0 +1,2 @@
+[console_scripts]
+voicepilot-voice-agent = run_worker:main

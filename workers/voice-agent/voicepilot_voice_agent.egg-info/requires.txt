@@ -1,0 +1,5 @@
+livekit-agents<2,>=1.2
+python-dotenv<2,>=1
+
+[test]
+pytest<9,>=8

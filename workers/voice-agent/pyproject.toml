@@ -1,0 +1,14 @@
+[project]
+name = "voicepilot-voice-agent"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = ["livekit-agents>=1.2,<2", "python-dotenv>=1,<2"]
+
+[project.scripts]
+voicepilot-voice-agent = "run_worker:main"
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

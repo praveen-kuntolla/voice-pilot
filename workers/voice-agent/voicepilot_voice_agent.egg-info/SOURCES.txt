@@ -1,0 +1,17 @@
+README.md
+pyproject.toml
+tests/test_runtime.py
+tests/test_worker.py
+voice_agent/__init__.py
+voice_agent/config.py
+voice_agent/providers.py
+voice_agent/runtime.py
+voice_agent/security.py
+voice_agent/service_client.py
+voice_agent/worker.py
+voicepilot_voice_agent.egg-info/PKG-INFO
+voicepilot_voice_agent.egg-info/SOURCES.txt
+voicepilot_voice_agent.egg-info/dependency_links.txt
+voicepilot_voice_agent.egg-info/entry_points.txt
+voicepilot_voice_agent.egg-info/requires.txt
+voicepilot_voice_agent.egg-info/top_level.txt

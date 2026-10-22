@@ -1,0 +1,6 @@
+import {z} from "zod";
+export const invitationSchema=z.object({email:z.string().trim().email().max(254),role:z.enum(["admin","member","viewer"]).default("member")});
+export const agentSchema=z.object({name:z.string().trim().min(2).max(120),instructions:z.string().max(10000),language:z.string().min(2).max(20),voice_id:z.string().max(120).optional(),status:z.enum(["draft","active","archived"]).default("draft")});
+const timezoneSchema=z.string().min(2).refine(value=>value==="UTC"||Intl.supportedValuesOf("timeZone").includes(value),{message:"Invalid IANA timezone"});
+export const campaignSchema=z.object({name:z.string().trim().min(2).max(120),agent_id:z.string().uuid().nullable().optional(),timezone:timezoneSchema,start_hour:z.number().int().min(0).max(23),end_hour:z.number().int().min(1).max(24),consent_required:z.boolean().default(true),status:z.enum(["draft","test","paused","completed"]).optional()}).refine(x=>x.end_hour>x.start_hour,{message:"End time must be after start time"});
+export const contactSchema=z.object({name:z.string().trim().min(2).max(120),phone:z.string().trim().max(40).optional(),email:z.preprocess(v=>v===""?undefined:v,z.string().email().max(254).optional()),consent_status:z.enum(["unknown","granted","revoked"]).default("unknown")});
