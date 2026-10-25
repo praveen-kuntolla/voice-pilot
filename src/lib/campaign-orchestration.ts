@@ -4,6 +4,7 @@ import { eligibleContacts, type SimCampaign, type SimCallState, type SimContact 
 export type OrchestrationState = "idle" | "running" | "paused" | "stopped" | "completed";
 export type RetryPreview = { attempt: number; delaySeconds: number; outcome: SimCallState };
 export type OrchestrationSummary = { total: number; eligible: number; processed: number; remaining: number; completed: number; excluded: number };
+export function isCurrentOrchestrationRequest(requestGeneration: number, currentGeneration: number, requestQueue: MockCampaignOrchestrator | null, currentQueue: MockCampaignOrchestrator | null, requestCampaignId: string, currentCampaignId: string) { return requestGeneration === currentGeneration && requestQueue !== null && requestQueue === currentQueue && requestCampaignId === currentCampaignId; }
 
 export function validateOrchestrationSchedule(date: string, time: string, timeZone: string, now = Date.now()) {
   const resolved = resolveLocalDateTime(date, time, timeZone);
