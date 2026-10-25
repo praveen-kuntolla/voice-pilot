@@ -5,6 +5,7 @@ export type SimCallState = "queued" | "eligibility_checking" | "simulated_dialin
 export type SimContact = { id: string; name: string; consent_status?: "unknown" | "granted" | "revoked"; opted_out_at?: string | null; opt_out?: boolean; organization_id: string };
 export type SimCampaign = { id: string; organization_id: string; agent_id?: string | null; status: string; consent_required: boolean };
 export type SimEvent = { contactId: string; state: SimCallState; message: string; outcome?: MockOutcome };
+export type SimulationInteraction = { id: string; contactId: string; outcome: MockOutcome; eventIndex: number };
 export type QualificationStatus = "new_lead" | "qualified" | "highly_interested" | "interested" | "needs_follow_up" | "not_interested" | "unqualified" | "do_not_contact";
 export type QualificationResult = { score: number; status: QualificationStatus; explanation: string[]; nextAction: "callback" | "appointment" | "follow_up" | "none" };
 export function qualifySimulation(outcome: MockOutcome, answers: { service?: string; purchase?: "yes" | "no" | "maybe"; budget?: "low" | "medium" | "high"; timing?: "now" | "later" } = {}): QualificationResult {
@@ -19,6 +20,14 @@ export function qualifySimulation(outcome: MockOutcome, answers: { service?: str
   if (score >= 65) return { score, status: "qualified", explanation, nextAction: "callback" };
   if (score >= 45) return { score, status: "interested", explanation, nextAction: "follow_up" };
   return { score, status: "needs_follow_up", explanation, nextAction: "follow_up" };
+}
+const terminalOutcomes = new Set<MockOutcome>(["interested", "not_interested", "callback_requested", "appointment_requested", "opted_out", "wrong_number"]);
+export function completedInteractions(events: SimEvent[]): SimulationInteraction[] {
+  return events.flatMap((event, eventIndex) => event.state === "completed" && event.outcome && terminalOutcomes.has(event.outcome) ? [{ id: `${event.contactId}:${eventIndex}`, contactId: event.contactId, outcome: event.outcome, eventIndex }] : []);
+}
+export function qualificationForInteraction(events: SimEvent[], interactionId: string, answers: Parameters<typeof qualifySimulation>[1] = {}) {
+  const interaction = completedInteractions(events).find((item) => item.id === interactionId);
+  return interaction ? { interaction, result: qualifySimulation(interaction.outcome, answers) } : null;
 }
 export type SimulationPreflightContact = { id: string; name: string; organization_id: string; consent_status: "unknown" | "granted" | "revoked"; opted_out_at: string | null; eligible: boolean; reason?: string };
 export type SimulationPreflight = { simulationOnly: true; organizationId: string; campaign: SimCampaign & { name: string }; agent: { id: string; name: string; language: string; organization_id: string }; contacts: SimulationPreflightContact[]; counts: { selected: number; eligible: number; excluded: number } };
@@ -69,6 +78,7 @@ export function simulationMetrics(events: SimEvent[], selectedCount = new Set(ev
   const last = new Map<string, SimEvent>(); events.forEach((event) => last.set(event.contactId, event));
   const values = [...last.values()];
   const processed = values.length;
-  return { selected: selectedCount, total: selectedCount, processed, remaining: Math.max(0, selectedCount - processed), eligible: values.filter((x) => x.state !== "skipped").length, skipped: values.filter((x) => x.state === "skipped").length, completed: values.filter((x) => x.state === "completed").length, connected: events.filter((x) => x.state === "simulated_connected").length, noAnswer: values.filter((x) => x.outcome === "no_answer").length, busy: values.filter((x) => x.outcome === "busy").length, failed: values.filter((x) => x.state === "failed").length, interested: values.filter((x) => x.outcome === "interested").length, callbackRequested: values.filter((x) => x.outcome === "callback_requested").length, appointmentRequested: values.filter((x) => x.outcome === "appointment_requested").length };
+  const interactions = completedInteractions(events);
+  return { selected: selectedCount, total: selectedCount, processed, remaining: Math.max(0, selectedCount - processed), eligible: values.filter((x) => x.state !== "skipped").length, skipped: values.filter((x) => x.state === "skipped").length, completed: values.filter((x) => x.state === "completed").length, connected: events.filter((x) => x.state === "simulated_connected").length, noAnswer: values.filter((x) => x.outcome === "no_answer").length, busy: values.filter((x) => x.outcome === "busy").length, failed: values.filter((x) => x.state === "failed").length, interested: values.filter((x) => x.outcome === "interested").length, callbackRequested: values.filter((x) => x.outcome === "callback_requested").length, appointmentRequested: values.filter((x) => x.outcome === "appointment_requested").length, qualified: interactions.filter((item) => ["interested", "callback_requested", "appointment_requested"].includes(item.outcome)).length, highlyInterested: interactions.filter((item) => item.outcome === "appointment_requested").length };
 }
 

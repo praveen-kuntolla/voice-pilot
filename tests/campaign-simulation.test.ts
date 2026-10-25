@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MockCampaignSimulation, eligibleContacts, qualifySimulation, simulationMetrics } from "@/lib/campaign-simulation";
+import { MockCampaignSimulation, completedInteractions, eligibleContacts, qualificationForInteraction, qualifySimulation, simulationMetrics } from "@/lib/campaign-simulation";
 const org = "org-a";
 const campaign = { id: "campaign", organization_id: org, agent_id: "agent", status: "test", consent_required: true };
 describe("mock campaign simulation", () => {
@@ -35,5 +35,24 @@ describe("mock campaign simulation", () => {
     expect(qualifySimulation("interested", { service: "voice", purchase: "yes", budget: "high", timing: "now" })).toMatchObject({ status: "highly_interested", nextAction: "appointment" });
     expect(qualifySimulation("callback_requested", { service: "voice", purchase: "yes" }).explanation.length).toBeGreaterThan(1);
     expect(qualifySimulation("opted_out")).toMatchObject({ status: "do_not_contact", score: 0, nextAction: "none" });
+  });
+  it("qualifies only a completed interaction and preserves contact linkage", () => {
+    const simulation = new MockCampaignSimulation(campaign, [{ id: "qualified", name: "Qualified", organization_id: org, consent_status: "granted" }, { id: "busy", name: "Busy", organization_id: org, consent_status: "granted" }], org);
+    expect(qualificationForInteraction(simulation.events, "qualified:0")).toBeNull();
+    simulation.start("callback_requested");
+    simulation.pause();
+    simulation.resume("busy");
+    const interactions = completedInteractions(simulation.events);
+    expect(interactions).toHaveLength(1);
+    expect(interactions[0].contactId).toBe("qualified");
+    expect(qualificationForInteraction(simulation.events, interactions[0].id, { service: "voice", purchase: "yes", budget: "medium", timing: "later" })?.result.nextAction).toBe("callback");
+    expect(simulationMetrics(simulation.events, 2)).toMatchObject({ selected: 2, processed: 2, remaining: 0, qualified: 1, busy: 1 });
+  });
+  it("does not create duplicate interaction qualifications after reset", () => {
+    const simulation = new MockCampaignSimulation(campaign, [{ id: "1", name: "A", organization_id: org, consent_status: "granted" }], org);
+    simulation.start("appointment_requested");
+    expect(completedInteractions(simulation.events)).toHaveLength(1);
+    simulation.reset();
+    expect(completedInteractions(simulation.events)).toHaveLength(0);
   });
 });
