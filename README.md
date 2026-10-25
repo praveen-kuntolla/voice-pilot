@@ -16,3 +16,6 @@ The server and browser clients use `@supabase/ssr` cookie sessions. With no Supa
 
 ## Scope notes
 Live telephony, campaign execution, billing, email invitations, and worker services are intentionally Phase 2 placeholders. No demo metrics are represented as customer activity.
+
+## Local simulation capabilities
+The dashboard includes simulation-only campaign orchestration, deterministic voice-agent testing, consent-aware queue previews, synthetic analytics, and provider-readiness indicators. These workflows use local mock state and server authorization preflight; they do not place calls, send messages, capture microphone audio, contact AI providers, or persist simulated business outcomes. Real telephony, LiveKit, STT, LLM, and TTS integrations remain disabled until separately configured and approved.

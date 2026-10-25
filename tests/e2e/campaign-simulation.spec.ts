@@ -3,7 +3,7 @@ const enabled = process.env.E2E_ISOLATED_AUTH === "true" && Boolean(process.env.
 test("isolated campaign simulation preserves completed interaction qualification and reset", async ({ page }) => {
   test.skip(!enabled, "Requires disposable isolated campaign fixtures.");
   await page.goto("/login"); await page.getByLabel("Email").fill(process.env.E2E_EMAIL_C!); await page.getByLabel("Password").fill(process.env.E2E_PASSWORD_C!); await page.getByRole("button", { name: /log in/i }).click(); await expect(page).toHaveURL(/dashboard/);
-  await page.goto("/dashboard/campaigns"); await expect(page.getByText("Simulation Studio", { exact: false })).toBeVisible(); await expect(page.getByText(/no outbound calls/i)).toBeVisible();
+  await page.goto("/dashboard/campaigns"); await expect(page.getByText("Simulation Studio", { exact: false })).toBeVisible(); await expect(page.getByText(/no outbound calls/i)).toBeVisible(); await expect(page.getByLabel("Orchestration campaign")).toBeVisible();
   await page.getByLabel("Simulation campaign").selectOption({ label: "E2E Campaign A · draft" });
   await page.getByRole("button", { name: /run readiness check/i }).click();
   await expect(page.getByText(/Ready\. This is simulation only\./i)).toBeVisible();
