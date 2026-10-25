@@ -15,7 +15,7 @@ Apply migrations in filename order, including `202610220002_security_and_onboard
 The server and browser clients use `@supabase/ssr` cookie sessions. With no Supabase variables, the marketing site remains available and protected routes do not claim to be authenticated. Contact persistence returns a clear configuration error rather than a fake success.
 
 ## Scope notes
-Live telephony, campaign execution, billing, email invitations, and worker services are intentionally Phase 2 placeholders. No demo metrics are represented as customer activity.
+Live telephony, campaign execution, billing, email delivery, and worker services are not activated. The current product supports organization-scoped configuration and local simulation workflows; no demo metrics are represented as customer activity. See `docs/phase-3-acceptance.md` for the acceptance checklist and future-provider handover requirements.
 
 ## Local simulation capabilities
 The dashboard includes simulation-only campaign orchestration, deterministic voice-agent testing, consent-aware queue previews, synthetic analytics, and provider-readiness indicators. These workflows use local mock state and server authorization preflight; they do not place calls, send messages, capture microphone audio, contact AI providers, or persist simulated business outcomes. Real telephony, LiveKit, STT, LLM, and TTS integrations remain disabled until separately configured and approved.
