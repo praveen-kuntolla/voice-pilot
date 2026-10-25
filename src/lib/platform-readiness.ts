@@ -9,6 +9,8 @@ export function readinessIndicators(telephony: TelephonyReadiness = "disabled"):
     { name: "Offline contracts", status: "contract-tested", detail: "Deterministic provider lifecycle adapters are locally tested." },
     { name: "Realtime voice", status: "disabled", detail: "LiveKit sessions are disabled; credentials and production controls are missing." },
     { name: "AI providers", status: "disabled", detail: "External STT, LLM and TTS providers are disabled; webhook infrastructure is unverified." },
+    { name: "Durable safety controls", status: "unverified", detail: "Transactional replay, reservations, emergency stop and usage-ledger design is review-only; production storage is not active." },
+    { name: "Offline safety tests", status: "contract-tested", detail: "Deterministic replay, concurrency, budget and tenant-bound control behavior is locally tested." },
   ];
 }
 

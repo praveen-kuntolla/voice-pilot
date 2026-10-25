@@ -17,6 +17,8 @@ Webhook verification is a generic offline HMAC fixture contract, not Twilio, Tel
 - Billing reconciliation, alerting, retention controls and incident response.
 - Private networking and observability before enabling any external endpoint.
 - Offline policy functions are testable guardrails, not complete production enforcement; usage accounting, distributed limits and authoritative emergency-stop state remain outstanding.
+- Phases 4.05–4.08 add review-only durable-safety contracts and a local in-memory adapter. The adapter is test-only, and the accompanying migration is not applied.
+- Replay claims, reservations, emergency-stop state and usage accounting require transactional RPCs, durable retention/cleanup, distributed rate limits, metrics and failure drills before provider connectivity.
 
 ## First approved connectivity test
 
