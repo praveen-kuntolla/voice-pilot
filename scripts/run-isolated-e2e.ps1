@@ -56,7 +56,7 @@ try {
   $ready = $false
   for ($i = 0; $i -lt 60; $i++) {
     $listener = @(Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue)
-    try { $health = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/api/health' -UseBasicParsing; $owned = $listener -and (Test-IsolatedServerOwner ([int]$listener[0].OwningProcess) $server.Id); if ($health.StatusCode -eq 200 -and $listener -and ($owned -or -not $server.HasExited)) { $ready = $true; break } } catch {}
+    try { $health = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/api/health' -UseBasicParsing; if ($health.StatusCode -eq 200 -and $listener -and (Test-IsolatedServerOwner ([int]$listener[0].OwningProcess) $server.Id)) { $ready = $true; break } } catch {}
     if ($server.HasExited) { throw "Isolated Next.js server exited before readiness. See local isolated server logs." }
     Start-Sleep -Milliseconds 500
   }
