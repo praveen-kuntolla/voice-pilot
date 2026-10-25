@@ -109,6 +109,10 @@ function GovernancePanel() {
   const [privacy, setPrivacy] = useState<PrivacyPolicy | null>(null);
   const [usage, setUsage] = useState<UsageSummary[]>([]);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
+  const [auditAction, setAuditAction] = useState("");
+  const [auditSearch, setAuditSearch] = useState("");
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditTotal, setAuditTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
@@ -149,6 +153,7 @@ function GovernancePanel() {
       }
       setUsage(usageR.summary ?? []);
       setAudit(auditR.events ?? []);
+      setAuditTotal(auditR.events?.length ?? 0);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load governance data");
     } finally {
@@ -157,6 +162,17 @@ function GovernancePanel() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  async function loadAudit(page = auditPage) {
+    setError("");
+    const params = new URLSearchParams({ page: String(page), page_size: "20" });
+    if (auditAction) params.set("action", auditAction);
+    if (auditSearch.trim()) params.set("search", auditSearch.trim());
+    const response = await fetch(`/api/governance/audit?${params}`, { cache: "no-store" });
+    const body = await response.json() as { events?: AuditEvent[]; total?: number; error?: string };
+    if (!response.ok) { setError(body.error ?? "Unable to load audit history"); return; }
+    setAudit(body.events ?? []); setAuditTotal(body.total ?? 0); setAuditPage(page);
+  }
 
   async function grantOrgApproval(e: React.FormEvent) {
     e.preventDefault();
@@ -394,7 +410,12 @@ function GovernancePanel() {
       {/* ── Audit Log ── */}
       <section className="card">
         <h3>Governance audit log <span className="muted" style={{ fontWeight: 400, fontSize: 14 }}>(immutable)</span></h3>
-        <p className="muted" style={{ marginBottom: 12 }}>Last 20 events. Written automatically by database triggers.</p>
+        <p className="muted" style={{ marginBottom: 12 }}>Immutable events for the selected organization only. {auditTotal} matching event{auditTotal === 1 ? "" : "s"}.</p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <select className="input" aria-label="Audit action filter" value={auditAction} onChange={(e) => setAuditAction(e.target.value)}><option value="">All actions</option><option value="approval_granted">Approval granted</option><option value="approval_updated">Approval updated</option><option value="approval_revoked">Approval revoked</option><option value="quota_changed">Quota changed</option><option value="credential_reference_changed">Credential reference changed</option></select>
+          <input className="input" aria-label="Search audit history" value={auditSearch} onChange={(e) => setAuditSearch(e.target.value)} placeholder="Search action, provider, actor" maxLength={120} />
+          <button className="btn ghost" type="button" onClick={() => void loadAudit(1)}>Apply filters</button>
+        </div>
         {audit.length === 0
           ? <p className="muted">No audit events recorded.</p>
           : (
@@ -415,6 +436,7 @@ function GovernancePanel() {
               ))}
             </div>
           )}
+        {auditTotal > 20 && <div style={{ display: "flex", gap: 8, marginTop: 12 }}><button className="btn ghost" type="button" disabled={auditPage <= 1} onClick={() => void loadAudit(auditPage - 1)}>Previous</button><button className="btn ghost" type="button" disabled={auditPage * 20 >= auditTotal} onClick={() => void loadAudit(auditPage + 1)}>Next</button></div>}
       </section>
     </div>
   );
