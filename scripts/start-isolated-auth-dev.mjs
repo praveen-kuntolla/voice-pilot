@@ -16,7 +16,7 @@ if (values.SUPABASE_PUBLIC_URL !== "http://127.0.0.1:55421" || !values.ANON_KEY 
 }
 
 const nextBinary = resolve("node_modules/next/dist/bin/next");
-const child = spawn(process.execPath, [nextBinary, "dev", "--hostname", "127.0.0.1", "--port", "3000"], {
+const child = spawn(process.execPath, [nextBinary, "dev", "--hostname", "127.0.0.1", "--port", process.env.PORT || "3000"], {
   cwd: process.cwd(),
   env: {
     ...process.env,

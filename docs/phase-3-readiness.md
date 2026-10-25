@@ -449,3 +449,16 @@ meaningful approver update, revocation, re-approval, organization credential
 reference auditing, RLS cross-tenant denial, unauthorized mutation rejection,
 and immutable audit events. Disposable users, organizations, and records were
 removed afterward. No remote database or external provider was contacted.
+
+## Phase 3.18 local governance UX and simulation preflight — 2026-10-25
+
+The governance audit API now filters and paginates only after the authenticated,
+selected-organization audit RPC has returned its scoped result set. The settings
+screen adds action and text filters plus pagination controls. The mock agent
+console now requires a read-only, server-verified simulation preflight that
+confirms the selected organization, agent ownership, agent completeness, and
+the mock-only provider/quota/privacy boundary before it runs. It does not create
+a provider reservation or external session.
+## Phase 3.24 local verification status
+
+Phase 3.24 code-level verification was run with provider, LiveKit, telephony, and remote Supabase integrations disabled. Docker CLI 29.9.2 was present on the `desktop-linux` context, but the Docker Desktop Linux engine pipe was unavailable (`dockerDesktopLinuxEngine` not found) and no backend process was running. Accordingly, the isolated `voicepilot-local-loopback` Compose project, migration ledger, disposable fixtures, RLS checks, and authenticated browser workflows were not accessed or claimed as verified.
