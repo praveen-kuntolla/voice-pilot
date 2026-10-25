@@ -45,8 +45,8 @@ describe("mock campaign simulation", () => {
     const interactions = completedInteractions(simulation.events);
     expect(interactions).toHaveLength(1);
     expect(interactions[0].contactId).toBe("qualified");
-    expect(qualificationForInteraction(simulation.events, interactions[0].id, { service: "voice", purchase: "yes", budget: "medium", timing: "later" })?.result.nextAction).toBe("callback");
-    expect(simulationMetrics(simulation.events, 2, { service: "voice", purchase: "yes", budget: "medium", timing: "later" })).toMatchObject({ selected: 2, processed: 2, remaining: 0, qualified: 1, busy: 1 });
+    expect(qualificationForInteraction(simulation.events, interactions[0].id)?.result.nextAction).toBe("follow_up");
+    expect(simulationMetrics(simulation.events, 2)).toMatchObject({ selected: 2, processed: 2, remaining: 0, qualified: 0, busy: 1 });
   });
   it("does not create duplicate interaction qualifications after reset", () => {
     const simulation = new MockCampaignSimulation(campaign, [{ id: "1", name: "A", organization_id: org, consent_status: "granted" }], org);
@@ -60,6 +60,16 @@ describe("mock campaign simulation", () => {
     simulation.start("interested");
     simulation.pause();
     simulation.resume("no_answer");
-    expect(simulationMetrics(simulation.events, 2, { service: "voice", purchase: "yes", budget: "high", timing: "now" })).toMatchObject({ processed: 2, qualified: 1, highlyInterested: 1, noAnswer: 1 });
+    expect(simulationMetrics(simulation.events, 2)).toMatchObject({ processed: 2, qualified: 0, highlyInterested: 0, noAnswer: 1 });
+  });
+  it("keeps each completed interaction's qualification answers immutable", () => {
+    const simulation = new MockCampaignSimulation(campaign, [{ id: "a", name: "A", organization_id: org, consent_status: "granted" }, { id: "b", name: "B", organization_id: org, consent_status: "granted" }], org);
+    simulation.start("interested", { service: "voice", purchase: "yes", budget: "high", timing: "now" });
+    simulation.pause();
+    simulation.resume("interested", { service: "voice", purchase: "no", budget: "low", timing: "later" });
+    const interactions = completedInteractions(simulation.events);
+    expect(qualificationForInteraction(simulation.events, interactions[0].id)?.result.status).toBe("highly_interested");
+    expect(qualificationForInteraction(simulation.events, interactions[1].id)?.result.status).toBe("interested");
+    expect(simulationMetrics(simulation.events, 2)).toMatchObject({ processed: 2, qualified: 1, highlyInterested: 1 });
   });
 });
