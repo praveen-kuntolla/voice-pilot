@@ -1,10 +1,20 @@
-param([switch]$KeepServer)
+param([switch]$KeepServer, [switch]$FocusedLogin)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $metadata = Join-Path $repo '.local\voicepilot-local-loopback-fixtures.json'
 $fixtureScript = Join-Path $PSScriptRoot 'local-supabase-fixtures.ps1'
 $server = $null
+$serverLog = Join-Path $repo '.local\isolated-next.stdout.log'
+$serverErrorLog = Join-Path $repo '.local\isolated-next.stderr.log'
+function Get-DescendantProcessIds([int]$rootId) {
+  $ids = [System.Collections.Generic.List[int]]::new(); $ids.Add($rootId)
+  $changed = $true
+  while ($changed) { $changed = $false; foreach ($process in Get-CimInstance Win32_Process) { if ($ids.Contains([int]$process.ParentProcessId) -and -not $ids.Contains([int]$process.ProcessId)) { $ids.Add([int]$process.ProcessId); $changed = $true } } }
+  return $ids
+}
 try {
+  $existing = @(Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue)
+  if ($existing) { throw "Port 3001 is already occupied by PID $($existing[0].OwningProcess); refusing to reuse an unverified server." }
   $compose = docker compose -p voicepilot-local-loopback ps --format json | ConvertFrom-Json
   if (-not $compose) { throw 'The isolated Compose project is not running.' }
   $published = @($compose | Where-Object { $_.Publishers -and $_.Publishers -match '127\.0\.0\.1' })
@@ -22,11 +32,19 @@ try {
   $env:E2E_EMAIL_B = [string]$fixture.users[1].email; $env:E2E_PASSWORD_B = [string]$fixture.users[1].password
   $env:E2E_EMAIL_C = [string]$fixture.users[2].email; $env:E2E_PASSWORD_C = [string]$fixture.users[2].password
   $env:PORT = '3001'; $env:PLAYWRIGHT_BASE_URL = 'http://127.0.0.1:3001'; $env:PLAYWRIGHT_REUSE_EXISTING_SERVER = 'true'
-  $server = Start-Process -FilePath 'node' -ArgumentList 'scripts/start-isolated-auth-dev.mjs' -WorkingDirectory $repo -PassThru -WindowStyle Hidden
+  Remove-Item $serverLog,$serverErrorLog -Force -ErrorAction SilentlyContinue
+  $server = Start-Process -FilePath 'node' -ArgumentList 'scripts/start-isolated-auth-dev.mjs' -WorkingDirectory $repo -PassThru -WindowStyle Hidden -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog
   $ready = $false
-  for ($i = 0; $i -lt 60; $i++) { try { $health = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/api/health' -UseBasicParsing; if ($health.StatusCode -eq 200) { $ready = $true; break } } catch {} Start-Sleep -Milliseconds 500 }
+  for ($i = 0; $i -lt 60; $i++) {
+    $listener = @(Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue)
+    try { $health = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/api/health' -UseBasicParsing; if ($health.StatusCode -eq 200 -and $listener -and (Get-DescendantProcessIds $server.Id) -contains [int]$listener[0].OwningProcess) { $ready = $true; break } } catch {}
+    if ($server.HasExited) { throw "Isolated Next.js server exited before readiness. See local isolated server logs." }
+    Start-Sleep -Milliseconds 500
+  }
   if (-not $ready) { throw 'The isolated Next.js server did not become ready.' }
-  & npx playwright test
+  $login = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/login' -UseBasicParsing
+  if ($login.StatusCode -ne 200 -or $login.Content -notmatch 'Log in to your workspace') { throw 'The isolated login page did not compile correctly. See local isolated server logs.' }
+  if ($FocusedLogin) { & npx playwright test tests/e2e/isolated-auth-flow.spec.ts --grep "persists a session" --workers=1 } else { & npx playwright test --workers=1 }
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
   Remove-Item Env:E2E_ISOLATED_AUTH,Env:E2E_EMAIL_A,Env:E2E_PASSWORD_A,Env:E2E_EMAIL_B,Env:E2E_PASSWORD_B,Env:E2E_EMAIL_C,Env:E2E_PASSWORD_C,Env:PLAYWRIGHT_BASE_URL,Env:PLAYWRIGHT_REUSE_EXISTING_SERVER,Env:PORT -ErrorAction SilentlyContinue

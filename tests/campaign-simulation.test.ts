@@ -46,7 +46,7 @@ describe("mock campaign simulation", () => {
     expect(interactions).toHaveLength(1);
     expect(interactions[0].contactId).toBe("qualified");
     expect(qualificationForInteraction(simulation.events, interactions[0].id, { service: "voice", purchase: "yes", budget: "medium", timing: "later" })?.result.nextAction).toBe("callback");
-    expect(simulationMetrics(simulation.events, 2)).toMatchObject({ selected: 2, processed: 2, remaining: 0, qualified: 1, busy: 1 });
+    expect(simulationMetrics(simulation.events, 2, { service: "voice", purchase: "yes", budget: "medium", timing: "later" })).toMatchObject({ selected: 2, processed: 2, remaining: 0, qualified: 1, busy: 1 });
   });
   it("does not create duplicate interaction qualifications after reset", () => {
     const simulation = new MockCampaignSimulation(campaign, [{ id: "1", name: "A", organization_id: org, consent_status: "granted" }], org);
@@ -54,5 +54,12 @@ describe("mock campaign simulation", () => {
     expect(completedInteractions(simulation.events)).toHaveLength(1);
     simulation.reset();
     expect(completedInteractions(simulation.events)).toHaveLength(0);
+  });
+  it("counts qualified analytics from deterministic results, not outcome labels", () => {
+    const simulation = new MockCampaignSimulation(campaign, [{ id: "1", name: "A", organization_id: org, consent_status: "granted" }, { id: "2", name: "B", organization_id: org, consent_status: "granted" }], org);
+    simulation.start("interested");
+    simulation.pause();
+    simulation.resume("no_answer");
+    expect(simulationMetrics(simulation.events, 2, { service: "voice", purchase: "yes", budget: "high", timing: "now" })).toMatchObject({ processed: 2, qualified: 1, highlyInterested: 1, noAnswer: 1 });
   });
 });

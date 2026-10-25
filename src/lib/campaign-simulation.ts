@@ -74,11 +74,12 @@ export class MockCampaignSimulation {
   reset() { this.events.length = 0; this.index = 0; this.state = "idle"; }
 }
 
-export function simulationMetrics(events: SimEvent[], selectedCount = new Set(events.map((event) => event.contactId)).size) {
+export function simulationMetrics(events: SimEvent[], selectedCount = new Set(events.map((event) => event.contactId)).size, answers: Parameters<typeof qualifySimulation>[1] = {}) {
   const last = new Map<string, SimEvent>(); events.forEach((event) => last.set(event.contactId, event));
   const values = [...last.values()];
   const processed = values.length;
   const interactions = completedInteractions(events);
-  return { selected: selectedCount, total: selectedCount, processed, remaining: Math.max(0, selectedCount - processed), eligible: values.filter((x) => x.state !== "skipped").length, skipped: values.filter((x) => x.state === "skipped").length, completed: values.filter((x) => x.state === "completed").length, connected: events.filter((x) => x.state === "simulated_connected").length, noAnswer: values.filter((x) => x.outcome === "no_answer").length, busy: values.filter((x) => x.outcome === "busy").length, failed: values.filter((x) => x.state === "failed").length, interested: values.filter((x) => x.outcome === "interested").length, callbackRequested: values.filter((x) => x.outcome === "callback_requested").length, appointmentRequested: values.filter((x) => x.outcome === "appointment_requested").length, qualified: interactions.filter((item) => ["interested", "callback_requested", "appointment_requested"].includes(item.outcome)).length, highlyInterested: interactions.filter((item) => item.outcome === "appointment_requested").length };
+  const qualificationResults = interactions.map((item) => qualifySimulation(item.outcome, answers));
+  return { selected: selectedCount, total: selectedCount, processed, remaining: Math.max(0, selectedCount - processed), eligible: values.filter((x) => x.state !== "skipped").length, skipped: values.filter((x) => x.state === "skipped").length, completed: values.filter((x) => x.state === "completed").length, connected: events.filter((x) => x.state === "simulated_connected").length, noAnswer: values.filter((x) => x.outcome === "no_answer").length, busy: values.filter((x) => x.outcome === "busy").length, failed: values.filter((x) => x.state === "failed").length, interested: values.filter((x) => x.outcome === "interested").length, callbackRequested: values.filter((x) => x.outcome === "callback_requested").length, appointmentRequested: values.filter((x) => x.outcome === "appointment_requested").length, qualified: qualificationResults.filter((result) => result.status === "qualified" || result.status === "highly_interested").length, highlyInterested: qualificationResults.filter((result) => result.status === "highly_interested").length };
 }
 
