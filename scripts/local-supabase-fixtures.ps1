@@ -4,20 +4,22 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$productionRef = 'xegmtbkxcynxpioifdxh'
-$metadataPath = Join-Path ([IO.Path]::GetTempPath()) 'voicepilot-local-fixtures.json'
+$localRoot = Join-Path $PSScriptRoot '..\.local'
+$metadataPath = Join-Path $localRoot 'voicepilot-local-loopback-fixtures.json'
+$composeEnvPath = Join-Path $localRoot 'supabase-loopback-source\docker\.env'
 
 function Get-LocalStatus {
-  $status = npx.cmd supabase status -o json | ConvertFrom-Json
-  if ($LASTEXITCODE -ne 0) { throw 'Unable to read local Supabase status.' }
-  $apiUrl = [string]$status.API_URL
-  if ([string]::IsNullOrWhiteSpace($apiUrl) -or $apiUrl -notmatch '^https?://(127\.0\.0\.1|localhost):\d+$') {
-    throw 'Refusing to continue: Supabase API URL is not local.'
+  if (-not (Test-Path -LiteralPath $composeEnvPath)) { throw 'Unable to find the isolated local Supabase configuration.' }
+  $values = @{}
+  Get-Content -LiteralPath $composeEnvPath | ForEach-Object {
+    if ($_ -match '^([A-Z0-9_]+)=(.*)$') { $values[$matches[1]] = $matches[2] }
   }
-  if ($apiUrl -match '\.supabase\.co' -or (Test-Path 'supabase/.temp/project-ref') -and ((Get-Content 'supabase/.temp/project-ref' -Raw).Trim() -eq $productionRef)) {
-    throw 'Refusing to continue: a remote Supabase project was detected.'
+  $apiUrl = [string]$values['SUPABASE_PUBLIC_URL']
+  if ($apiUrl -ne 'http://127.0.0.1:55421') { throw 'Refusing to continue: the configured API URL is not the approved isolated loopback endpoint.' }
+  if ([string]::IsNullOrWhiteSpace($values['ANON_KEY']) -or [string]::IsNullOrWhiteSpace($values['SERVICE_ROLE_KEY'])) {
+    throw 'The isolated local Supabase API keys are unavailable.'
   }
-  return $status
+  return [pscustomobject]@{ API_URL=$apiUrl; ANON_KEY=$values['ANON_KEY']; SERVICE_ROLE_KEY=$values['SERVICE_ROLE_KEY'] }
 }
 
 function Invoke-LocalAdmin {
@@ -49,13 +51,17 @@ if ($Action -eq 'cleanup') {
 }
 
 if (Test-Path $metadataPath) { & $PSCommandPath -Action cleanup | Out-Null }
+New-Item -ItemType Directory -Path $localRoot -Force | Out-Null
 $passwordA = 'VpE2!' + ([Guid]::NewGuid().ToString('N').Substring(0, 20))
 $passwordB = 'VpE2!' + ([Guid]::NewGuid().ToString('N').Substring(0, 20))
+$passwordC = 'VpE2!' + ([Guid]::NewGuid().ToString('N').Substring(0, 20))
 $emailA = 'voicepilot.e2e.a@example.test'
 $emailB = 'voicepilot.e2e.b@example.test'
+$emailC = 'voicepilot.e2e.c@example.test'
 
 $userA = Invoke-LocalAdmin -Method 'Post' -Path '/auth/v1/admin/users' -Body @{ email = $emailA; password = $passwordA; email_confirm = $true; user_metadata = @{ full_name = 'VoicePilot E2E A' } } -Status $status
 $userB = Invoke-LocalAdmin -Method 'Post' -Path '/auth/v1/admin/users' -Body @{ email = $emailB; password = $passwordB; email_confirm = $true; user_metadata = @{ full_name = 'VoicePilot E2E B' } } -Status $status
+$userC = Invoke-LocalAdmin -Method 'Post' -Path '/auth/v1/admin/users' -Body @{ email = $emailC; password = $passwordC; email_confirm = $true; user_metadata = @{ full_name = 'VoicePilot E2E C' } } -Status $status
 
 function Insert-Local {
   param([string]$Table, [object]$Body)
@@ -68,10 +74,14 @@ $agentA = [Guid]::NewGuid().ToString()
 $agentB = [Guid]::NewGuid().ToString()
 $contactA = [Guid]::NewGuid().ToString()
 $campaignA = [Guid]::NewGuid().ToString()
+Insert-Local 'profiles' @{ id=$userA.id; full_name='VoicePilot E2E A' } | Out-Null
+Insert-Local 'profiles' @{ id=$userB.id; full_name='VoicePilot E2E B' } | Out-Null
+Insert-Local 'profiles' @{ id=$userC.id; full_name='VoicePilot E2E C' } | Out-Null
 Insert-Local 'organizations' @{ id=$orgA; name='E2E Workspace A'; industry='Testing'; country='IN'; timezone='Asia/Calcutta'; business_use_case='Local isolated tests'; created_by=$userA.id } | Out-Null
 Insert-Local 'organizations' @{ id=$orgB; name='E2E Workspace B'; industry='Testing'; country='IN'; timezone='Asia/Calcutta'; business_use_case='Local isolated tests'; created_by=$userB.id } | Out-Null
 Insert-Local 'organization_members' @{ organization_id=$orgA; user_id=$userA.id; role='owner' } | Out-Null
 Insert-Local 'organization_members' @{ organization_id=$orgB; user_id=$userB.id; role='owner' } | Out-Null
+Insert-Local 'organization_members' @{ organization_id=$orgA; user_id=$userC.id; role='admin' } | Out-Null
 Insert-Local 'organization_members' @{ organization_id=$orgB; user_id=$userA.id; role='member' } | Out-Null
 Insert-Local 'agents' @{ id=$agentA; organization_id=$orgA; name='E2E Agent A'; instructions='Local test agent'; language='en-US'; status='draft'; created_by=$userA.id } | Out-Null
 Insert-Local 'agents' @{ id=$agentB; organization_id=$orgB; name='E2E Agent B'; instructions='Local test agent'; language='en-US'; status='draft'; created_by=$userB.id } | Out-Null
@@ -82,7 +92,8 @@ Insert-Local 'campaigns' @{ id=$campaignA; organization_id=$orgA; agent_id=$agen
   api_url = [string]$status.API_URL
   users = @(
     @{ id=$userA.id; email=$emailA; password=$passwordA; organization_id=$orgA; agent_id=$agentA },
-    @{ id=$userB.id; email=$emailB; password=$passwordB; organization_id=$orgB; agent_id=$agentB }
+    @{ id=$userB.id; email=$emailB; password=$passwordB; organization_id=$orgB; agent_id=$agentB },
+    @{ id=$userC.id; email=$emailC; password=$passwordC; organization_id=$orgA; agent_id=$agentA }
   )
   ids = @{
     organizations = @($orgA,$orgB)

@@ -25,7 +25,7 @@ Only after explicit approval: create separate provider test accounts with minimu
 ## Remaining production blockers
 
 - Managed secret-store integration and credential-rotation workflow.
-- Persistent organization/agent approvals, privacy policies, audit log, and distributed usage ledger migrations plus RLS verification.
+- Persistent organization/agent approvals, privacy policies, audit log, and distributed usage ledger migrations plus RLS verification; the local migration design is documented in [provider-governance-persistence.md](provider-governance-persistence.md).
 - Provider-specific legal, data-processing, regional, retention, and cost review.
 - Approved isolated provider and LiveKit integration tests.
 - LiveKit JWT/participant revocation and production Redis HA/TLS/ACL work.

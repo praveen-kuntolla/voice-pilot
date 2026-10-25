@@ -1,14 +1,16 @@
 import { createClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 
-const metadataPath = `${process.env.TEMP}/voicepilot-local-fixtures.json`;
-const fixture = JSON.parse(readFileSync(metadataPath, "utf8"));
-const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
-const status = JSON.parse(execFileSync(npxCommand, ["supabase", "status", "-o", "json"], { encoding: "utf8", shell: process.platform === "win32", env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: "true" } }));
-const apiUrl = String(status.API_URL || "");
-if (!/^https?:\/\/(127\.0\.0\.1|localhost):\d+$/.test(apiUrl) || apiUrl.includes(".supabase.co")) throw new Error("Refusing non-local Supabase URL");
-const anonKey = String(status.ANON_KEY || "");
+const metadataPath = resolve(".local/voicepilot-local-loopback-fixtures.json");
+const fixture = JSON.parse(readFileSync(metadataPath, "utf8").replace(/^\uFEFF/, ""));
+const env = Object.fromEntries(readFileSync(resolve(".local/supabase-loopback-source/docker/.env"), "utf8").split(/\r?\n/).flatMap((line) => {
+  const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
+  return match ? [[match[1], match[2]]] : [];
+}));
+const apiUrl = String(env.SUPABASE_PUBLIC_URL || "");
+if (apiUrl !== "http://127.0.0.1:55421") throw new Error("Refusing non-isolated Supabase URL");
+const anonKey = String(env.ANON_KEY || "");
 const [userA, userB] = fixture.users;
 
 const makeClient = () => createClient(apiUrl, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
