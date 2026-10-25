@@ -153,7 +153,7 @@ function GovernancePanel() {
       }
       setUsage(usageR.summary ?? []);
       setAudit(auditR.events ?? []);
-      setAuditTotal(auditR.events?.length ?? 0);
+      setAuditTotal((auditR as { total?: number }).total ?? auditR.events?.length ?? 0);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load governance data");
     } finally {
@@ -410,7 +410,7 @@ function GovernancePanel() {
       {/* ── Audit Log ── */}
       <section className="card">
         <h3>Governance audit log <span className="muted" style={{ fontWeight: 400, fontSize: 14 }}>(immutable)</span></h3>
-        <p className="muted" style={{ marginBottom: 12 }}>Immutable events for the selected organization only. {auditTotal} matching event{auditTotal === 1 ? "" : "s"}.</p>
+        <p className="muted" style={{ marginBottom: 12 }}>Immutable events for the selected organization only. {auditTotal} matching event{auditTotal === 1 ? "" : "s"}. Results are bounded by the existing 200-row audit RPC limit; this is not complete historical pagination.</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           <select className="input" aria-label="Audit action filter" value={auditAction} onChange={(e) => setAuditAction(e.target.value)}><option value="">All actions</option><option value="approval_granted">Approval granted</option><option value="approval_updated">Approval updated</option><option value="approval_revoked">Approval revoked</option><option value="quota_changed">Quota changed</option><option value="credential_reference_changed">Credential reference changed</option></select>
           <input className="input" aria-label="Search audit history" value={auditSearch} onChange={(e) => setAuditSearch(e.target.value)} placeholder="Search action, provider, actor" maxLength={120} />
@@ -419,13 +419,14 @@ function GovernancePanel() {
         {audit.length === 0
           ? <p className="muted">No audit events recorded.</p>
           : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div aria-label="Governance audit timeline" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {audit.map((ev) => (
                 <div key={ev.id} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 0", borderTop: "1px solid var(--border)" }}>
                   <ChevronRight size={14} style={{ color: "var(--muted)", flexShrink: 0, marginTop: 2 }} />
                   <div style={{ flex: 1 }}>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <strong style={{ fontSize: 13 }}>{ev.action.replace(/_/g, " ")}</strong>
+                      <strong style={{ fontSize: 13, textTransform: "capitalize" }}>{ev.action.replace(/_/g, " ")}</strong>
+                      <span className="muted" style={{ fontSize: 11 }}>{ev.action.includes("revok") ? "REVOCATION" : ev.action.includes("approv") ? "APPROVAL" : "GOVERNANCE"}</span>
                       {ev.provider && <span className="muted" style={{ fontSize: 12 }}>· {PROVIDER_LABELS[ev.provider] ?? ev.provider}</span>}
                     </div>
                     <p className="muted" style={{ fontSize: 12, marginTop: 2 }}>
