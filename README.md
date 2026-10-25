@@ -19,3 +19,5 @@ Live telephony, campaign execution, billing, email invitations, and worker servi
 
 ## Local simulation capabilities
 The dashboard includes simulation-only campaign orchestration, deterministic voice-agent testing, consent-aware queue previews, synthetic analytics, and provider-readiness indicators. These workflows use local mock state and server authorization preflight; they do not place calls, send messages, capture microphone audio, contact AI providers, or persist simulated business outcomes. Real telephony, LiveKit, STT, LLM, and TTS integrations remain disabled until separately configured and approved.
+
+Release-readiness boundaries: campaign queue reset requires a fresh authorization check; synthetic report exports are local JSON/CSV only, marked SIMULATION ONLY, and omit contact identifiers by default. The isolated E2E runner fails closed unless it can verify the loopback listener belongs to the launched test server. Real provider integration remains blocked pending separate credentials, distributed controls, consent/compliance review, and approval.
