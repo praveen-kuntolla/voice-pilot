@@ -1,8 +1,13 @@
+import { z } from "zod";
+
 export type MockOutcome = "interested" | "not_interested" | "callback_requested" | "appointment_requested" | "no_answer" | "busy" | "wrong_number" | "opted_out" | "error";
 export type SimCallState = "queued" | "eligibility_checking" | "simulated_dialing" | "simulated_ringing" | "simulated_connected" | "mock_conversation" | "completed" | "no_answer" | "busy" | "failed" | "skipped" | "cancelled";
 export type SimContact = { id: string; name: string; consent_status?: "unknown" | "granted" | "revoked"; opted_out_at?: string | null; opt_out?: boolean; organization_id: string };
 export type SimCampaign = { id: string; organization_id: string; agent_id?: string | null; status: string; consent_required: boolean };
 export type SimEvent = { contactId: string; state: SimCallState; message: string; outcome?: MockOutcome };
+export type SimulationPreflightContact = { id: string; name: string; organization_id: string; consent_status: "unknown" | "granted" | "revoked"; opted_out_at: string | null; eligible: boolean; reason?: string };
+export type SimulationPreflight = { simulationOnly: true; organizationId: string; campaign: SimCampaign & { name: string }; agent: { id: string; name: string; language: string; organization_id: string }; contacts: SimulationPreflightContact[]; counts: { selected: number; eligible: number; excluded: number } };
+export const simulationPreflightSchema = z.object({ simulationOnly: z.literal(true), organizationId: z.string().min(1), campaign: z.object({ id: z.string().min(1), name: z.string(), status: z.string(), organization_id: z.string().min(1), agent_id: z.string().nullable(), consent_required: z.boolean() }), agent: z.object({ id: z.string().min(1), name: z.string(), language: z.string(), organization_id: z.string().min(1) }), contacts: z.array(z.object({ id: z.string().min(1), name: z.string(), organization_id: z.string().min(1), consent_status: z.enum(["unknown", "granted", "revoked"]), opted_out_at: z.string().nullable(), eligible: z.boolean(), reason: z.string().optional() })), counts: z.object({ selected: z.number().int().nonnegative(), eligible: z.number().int().nonnegative(), excluded: z.number().int().nonnegative() }) }).strict();
 
 export function eligibleContacts(campaign: SimCampaign, contacts: SimContact, agentOrganizationId?: string) {
   if (campaign.organization_id !== contacts.organization_id) return { eligible: false, reason: "Contact belongs to another organization." };
@@ -13,7 +18,6 @@ export function eligibleContacts(campaign: SimCampaign, contacts: SimContact, ag
   if (agentOrganizationId && campaign.organization_id !== agentOrganizationId) return { eligible: false, reason: "Assigned agent belongs to another organization." };
   return { eligible: true as const };
 }
-
 export function outcomeFor(contactId: string, scenario: MockOutcome = "interested"): MockOutcome { void contactId; return scenario; }
 
 export class MockCampaignSimulation {
@@ -52,3 +56,4 @@ export function simulationMetrics(events: SimEvent[], selectedCount = new Set(ev
   const processed = values.length;
   return { selected: selectedCount, total: selectedCount, processed, remaining: Math.max(0, selectedCount - processed), eligible: values.filter((x) => x.state !== "skipped").length, skipped: values.filter((x) => x.state === "skipped").length, completed: values.filter((x) => x.state === "completed").length, connected: events.filter((x) => x.state === "simulated_connected").length, noAnswer: values.filter((x) => x.outcome === "no_answer").length, busy: values.filter((x) => x.outcome === "busy").length, failed: values.filter((x) => x.state === "failed").length, interested: values.filter((x) => x.outcome === "interested").length, callbackRequested: values.filter((x) => x.outcome === "callback_requested").length, appointmentRequested: values.filter((x) => x.outcome === "appointment_requested").length };
 }
+

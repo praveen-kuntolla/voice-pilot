@@ -16,7 +16,7 @@ export async function GET(_: Request, context: Context) {
   const agent = agentResult.data;
   const contactsResult = await s.from("contacts").select("id,name,organization_id,consent_status,opted_out_at").eq("organization_id", membership.organization_id);
   if (contactsResult.error) return NextResponse.json({ error: "Unable to verify campaign contacts" }, { status: 503 });
-  const contacts = (contactsResult.data ?? []).map((contact) => ({ ...contact, opt_out: Boolean(contact.opted_out_at) }));
-  const eligibility = contacts.map((contact) => ({ id: contact.id, name: contact.name, ...eligibleContacts(campaign, contact, agent.organization_id) }));
-  return NextResponse.json({ simulationOnly: true, campaign: { id: campaign.id, name: campaign.name, status: campaign.status }, agent: { id: agent.id, name: agent.name, language: agent.language }, contacts: eligibility, counts: { selected: eligibility.length, eligible: eligibility.filter((item) => item.eligible).length, excluded: eligibility.filter((item) => !item.eligible).length } });
+  const contacts = contactsResult.data ?? [];
+  const eligibility = contacts.map((contact) => ({ ...contact, ...eligibleContacts(campaign, contact, agent.organization_id) }));
+  return NextResponse.json({ simulationOnly: true, organizationId: membership.organization_id, campaign, agent: { id: agent.id, name: agent.name, language: agent.language, organization_id: agent.organization_id }, contacts: eligibility, counts: { selected: eligibility.length, eligible: eligibility.filter((item) => item.eligible).length, excluded: eligibility.filter((item) => !item.eligible).length } });
 }
