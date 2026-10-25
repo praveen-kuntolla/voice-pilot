@@ -15,4 +15,10 @@ describe("simulation scheduling", () => {
     expect(futureDateTime("2030-11-03", "01:30", "America/New_York", Date.parse("2029-01-01T00:00:00Z"))).toBe(false);
     expect(futureDateTime("2030-01-01", "10:01", "UTC", Date.parse("2030-01-01T10:01:00Z"))).toBe(false);
   });
+
+  it("rejects past callback and appointment proposals", () => {
+    const now = Date.parse("2030-01-01T00:00:00Z");
+    expect(futureDateTime("2029-12-31", "23:59", "UTC", now)).toBe(false);
+    expect(futureDateTime("2029-12-30", "12:00", "Asia/Kolkata", now)).toBe(false);
+  });
 });
