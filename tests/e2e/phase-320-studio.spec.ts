@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-const isolated = process.env.E2E_ISOLATED_AUTH === "true";
+const isolated = process.env.E2E_ISOLATED_AUTH === "true" && Boolean(process.env.E2E_EMAIL_C && process.env.E2E_PASSWORD_C);
 
 async function login(page: import("@playwright/test").Page) {
   await page.goto("/login");
-  await page.getByLabel("Email").fill(process.env.E2E_EMAIL_A!);
-  await page.getByLabel("Password").fill(process.env.E2E_PASSWORD_A!);
+  await page.getByLabel("Email").fill(process.env.E2E_EMAIL_C!);
+  await page.getByLabel("Password").fill(process.env.E2E_PASSWORD_C!);
   await page.getByRole("button", { name: /log in/i }).click();
   await expect(page).toHaveURL(/\/dashboard/);
 }
