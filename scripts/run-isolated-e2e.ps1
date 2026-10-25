@@ -12,6 +12,17 @@ function Get-DescendantProcessIds([int]$rootId) {
   while ($changed) { $changed = $false; foreach ($process in Get-CimInstance Win32_Process) { if ($ids.Contains([int]$process.ParentProcessId) -and -not $ids.Contains([int]$process.ProcessId)) { $ids.Add([int]$process.ProcessId); $changed = $true } } }
   return $ids
 }
+function Test-IsolatedServerOwner([int]$listenerPid, [int]$rootId) {
+  if ((Get-DescendantProcessIds $rootId) -contains $listenerPid) { return $true }
+  $process = Get-CimInstance Win32_Process -Filter "ProcessId=$listenerPid"
+  if ($null -ne $process -and [string]$process.CommandLine -match 'start-isolated-auth-dev\.mjs|next(\.js)?\s+dev' -and [string]$process.CommandLine -match [regex]::Escape($repo)) { return $true }
+  $current = $process
+  while ($null -ne $current -and [int]$current.ParentProcessId -gt 0) {
+    if ([int]$current.ParentProcessId -eq $rootId) { return $true }
+    $current = Get-CimInstance Win32_Process -Filter "ProcessId=$($current.ParentProcessId)"
+  }
+  return $false
+}
 try {
   $existing = @(Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue)
   if ($existing) { throw "Port 3001 is already occupied by PID $($existing[0].OwningProcess); refusing to reuse an unverified server." }
@@ -37,7 +48,7 @@ try {
   $ready = $false
   for ($i = 0; $i -lt 60; $i++) {
     $listener = @(Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue)
-    try { $health = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/api/health' -UseBasicParsing; if ($health.StatusCode -eq 200 -and $listener -and (Get-DescendantProcessIds $server.Id) -contains [int]$listener[0].OwningProcess) { $ready = $true; break } } catch {}
+    try { $health = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/api/health' -UseBasicParsing; if ($health.StatusCode -eq 200 -and $listener -and (Test-IsolatedServerOwner ([int]$listener[0].OwningProcess) $server.Id)) { $ready = $true; break } } catch {}
     if ($server.HasExited) { throw "Isolated Next.js server exited before readiness. See local isolated server logs." }
     Start-Sleep -Milliseconds 500
   }
