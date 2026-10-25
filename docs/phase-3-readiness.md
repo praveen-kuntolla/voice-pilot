@@ -370,3 +370,82 @@ passed** with disposable local fixtures, which were removed afterward.
 identifier scan found no LiveKit, Supabase service-role, or provider secret
 identifier names. No provider, LiveKit, remote Redis, or remote Supabase request
 was made.
+
+## Phase 3.16 local governance persistence — BLOCKED by local port exposure
+
+Migration `202610220008_governance_hardening.sql` remains **unapplied**. It is
+additive and contains idempotent indexes, update-timestamp triggers, and
+admin-gated governance read/revocation RPCs. The static migration review found
+no reason to apply it before the local environment can be demonstrated to be
+isolated.
+
+On 2026-10-24, Docker Desktop's Linux engine recovered and Supabase CLI was
+updated to `2.122.0`. The local stack was then started with the documented
+custom bridge network whose `com.docker.network.bridge.host_binding_ipv4` option
+is `127.0.0.1`. Docker nevertheless published the API, database, Studio,
+Mailpit, and Analytics ports on `0.0.0.0` and `[::]`. Container inspection
+shows empty `HostIp` values for these published ports. This makes the stack
+potentially reachable from the local network, so database initialization,
+migrations, fixtures, RLS checks, and authenticated browser tests are blocked.
+
+The current local PostgreSQL volume also contains no application schema or
+migration ledger; this differs from the earlier expected disposable local state.
+No migration is being inferred as applied, and no reset or recovery has been
+attempted. The Vector container independently restarts because its Docker-log
+source cannot reach Docker Desktop's internal endpoint at `192.168.65.254:2375`.
+That diagnostic is separate from the published-port issue and has not been
+remediated.
+
+No remote database, Redis, provider, LiveKit service, call, or email was
+accessed. Feature flags remain disabled. See
+[the sanitized upstream-report draft](supabase-cli-network-binding-report.md).
+Phase 3.16 may resume only after a supported, persistent loopback-only port
+binding is available and the local database state is deliberately revalidated.
+
+## Phase 3.17 local dashboard integration — 2026-10-24
+
+The Agent Builder now exposes an admin-gated, per-agent provider-governance
+panel. It uses the existing authenticated API routes and organization-scoped
+RLS; it records policy approvals only and does not activate a provider, voice
+runtime, telephony, or external integration. Settings already provides
+organization approvals, privacy policy, quota configuration, estimated-usage
+history, and an immutable audit view. Browser verification used only disposable
+local users, organizations, and opaque credential-reference strings.
+
+The dashboard repository now accepts PostgreSQL `timestamptz` values with an
+explicit UTC offset, and recognizes the `approval_updated` audit action from
+migration 010. Mutation routes share strict Origin-to-Host validation so the
+loopback browser URL works without weakening CSRF protection.
+
+Remaining schema risk: `audit_provider_governance()` in migration 010 accesses
+`OLD.credential_reference` for `agent_provider_approvals`, which has no such
+column. Inserts, revocations, and reapproval after a revocation use earlier
+branches and work; a repeated upsert of an already-active agent approval can
+fail. Correcting this requires a separately reviewed additive migration (for
+example, guarding that field comparison to organization-level approvals). No
+migration was created or applied during Phase 3.17.
+
+## Phase 3.17.1 audit-trigger repair — review only, 2026-10-24
+
+Migration `202610220011_agent_approval_audit_trigger_fix.sql` was applied on
+2026-10-24 to the verified **isolated local** `voicepilot-local-loopback`
+database only. It was not applied to any remote Supabase project. Migration 010 uses one audit trigger function for both
+organization and agent provider approvals. The former has a
+`credential_reference` column; the latter does not. An update of an active
+agent approval therefore reaches an invalid `OLD.credential_reference` access
+and fails before the audit row can be written.
+
+Migration 011 separates those table branches without changing existing audit
+rows, RLS, trigger ownership, or execute privileges. It records creation,
+revocation, restoration, and meaningful agent updates; a retry that changes
+only `updated_at` produces no duplicate audit event. The replacement retains
+the fixed `pg_catalog, public` SECURITY DEFINER search path and revokes all
+direct function execution from runtime roles.
+
+Static migration tests cover the column boundary, all approval transitions,
+idempotent active retries, and least-privilege function ACLs. Live isolated
+PostgreSQL tests also verified initial approval, idempotent active retry,
+meaningful approver update, revocation, re-approval, organization credential
+reference auditing, RLS cross-tenant denial, unauthorized mutation rejection,
+and immutable audit events. Disposable users, organizations, and records were
+removed afterward. No remote database or external provider was contacted.
