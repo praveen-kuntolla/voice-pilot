@@ -8,7 +8,10 @@ import {z} from "zod";
 const schema = z.object({agent_id:z.string().uuid()}).strict();
 
 export async function POST(req: Request) {
-  const {s,user,membership} = await currentMembership();
+  let context: Awaited<ReturnType<typeof currentMembership>>;
+  try { context = await currentMembership(); }
+  catch { return NextResponse.json({error:"Unauthorized"},{status:401}); }
+  const {s,user,membership} = context;
   if (!user) return NextResponse.json({error:"Unauthorized"},{status:401});
   if (!membership) return NextResponse.json({error:"Organization required"},{status:403});
   let config: ReturnType<typeof getLiveKitConfiguration>;

@@ -17,4 +17,18 @@ describe("mock campaign simulation", () => {
   it("prevents duplicate stop and never creates a real call state", () => {
     const simulation = new MockCampaignSimulation(campaign, [], org); expect(simulation.stop()).toBe(true); expect(simulation.stop()).toBe(false); expect(simulation.events).toHaveLength(0);
   });
+  it("always excludes opted-out contacts and blocks restart until reset", () => {
+    expect(eligibleContacts(campaign, { id: "4", name: "Opted out", organization_id: org, consent_status: "granted", opted_out_at: "2026-01-01" })).toMatchObject({ eligible: false });
+    const simulation = new MockCampaignSimulation(campaign, [{ id: "5", name: "A", organization_id: org, consent_status: "granted" }, { id: "8", name: "B", organization_id: org, consent_status: "granted" }], org);
+    expect(simulation.start()).toBe(true);
+    expect(simulation.stop()).toBe(true);
+    expect(simulation.start()).toBe(false);
+    simulation.reset();
+    expect(simulation.start()).toBe(true);
+  });
+  it("reports selected, processed and remaining queue metrics", () => {
+    const simulation = new MockCampaignSimulation(campaign, [{ id: "6", name: "A", organization_id: org, consent_status: "granted" }, { id: "7", name: "B", organization_id: org, consent_status: "granted" }], org);
+    simulation.start("busy");
+    expect(simulationMetrics(simulation.events, simulation.contacts.length)).toMatchObject({ selected: 2, processed: 1, remaining: 1, busy: 1 });
+  });
 });
