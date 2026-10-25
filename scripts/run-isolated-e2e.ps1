@@ -31,8 +31,26 @@ function Test-IsolatedServerOwner([int]$listenerPid, [int]$rootId) {
   }
   return $false
 }
+function Get-ListeningSockets {
+  $sockets = [System.Collections.Generic.List[object]]::new()
+  try {
+    foreach ($connection in @(Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction Stop | Where-Object { $_.LocalAddress -eq '127.0.0.1' })) {
+      $sockets.Add([pscustomobject]@{ Address = '127.0.0.1'; Port = 3001; OwningProcess = [int]$connection.OwningProcess; Method = 'Get-NetTCPConnection' })
+    }
+  } catch {}
+  if ($sockets.Count -eq 0) {
+    try {
+      foreach ($line in @(netstat.exe -ano -p tcp 2>$null)) {
+        if ($line -match '^\s*TCP\s+127\.0\.0\.1:3001\s+\S+\s+LISTENING\s+(\d+)\s*$') {
+          $sockets.Add([pscustomobject]@{ Address = '127.0.0.1'; Port = 3001; OwningProcess = [int]$Matches[1]; Method = 'netstat' })
+        }
+      }
+    } catch {}
+  }
+  return $sockets
+}
 try {
-  $existing = @(Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue)
+  $existing = @(Get-ListeningSockets)
   if ($existing) { throw "Port 3001 is already occupied by PID $($existing[0].OwningProcess); refusing to reuse an unverified server." }
   $compose = docker compose -p voicepilot-local-loopback ps --format json | ConvertFrom-Json
   if (-not $compose) { throw 'The isolated Compose project is not running.' }
@@ -55,12 +73,11 @@ try {
   $server = Start-Process -FilePath 'node' -ArgumentList 'scripts/start-isolated-auth-dev.mjs' -WorkingDirectory $repo -PassThru -WindowStyle Hidden -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog
   $ready = $false
   for ($i = 0; $i -lt 60; $i++) {
-    $listener = @(Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue)
-    try { $health = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/api/health' -UseBasicParsing; if ($health.StatusCode -eq 200 -and $listener -and (Test-IsolatedServerOwner ([int]$listener[0].OwningProcess) $server.Id)) { $ready = $true; break } } catch {}
+    try { $health = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/api/health' -UseBasicParsing; foreach ($listener in @(Get-ListeningSockets)) { if ($health.StatusCode -eq 200 -and (Test-IsolatedServerOwner ([int]$listener.OwningProcess) $server.Id)) { $ready = $true; break } }; if ($ready) { break } } catch {}
     if ($server.HasExited) { throw "Isolated Next.js server exited before readiness. See local isolated server logs." }
     Start-Sleep -Milliseconds 500
   }
-  if (-not $ready) { throw 'The isolated Next.js server did not become ready.' }
+  if (-not $ready) { $diagnosticSockets = @(Get-ListeningSockets | ForEach-Object { "$($_.Method):$($_.Address):$($_.Port):PID=$($_.OwningProcess)" }); throw "The isolated Next.js server did not become ready. Listener diagnostics: $($diagnosticSockets -join '; ') Root PID: $($server.Id)." }
   $login = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/login' -UseBasicParsing
   if ($login.StatusCode -ne 200 -or $login.Content -notmatch 'Log in to your workspace') { throw 'The isolated login page did not compile correctly. See local isolated server logs.' }
   if ($FocusedLogin) { & npx playwright test tests/e2e/isolated-auth-flow.spec.ts --grep "persists a session" --workers=1 } else { & npx playwright test --workers=1 }
