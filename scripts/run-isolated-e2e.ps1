@@ -16,6 +16,14 @@ function Test-IsolatedServerOwner([int]$listenerPid, [int]$rootId) {
   if ((Get-DescendantProcessIds $rootId) -contains $listenerPid) { return $true }
   $process = Get-CimInstance Win32_Process -Filter "ProcessId=$listenerPid"
   if ($null -ne $process -and [string]$process.CommandLine -match 'start-isolated-auth-dev\.mjs|next(\.js)?\s+dev' -and [string]$process.CommandLine -match [regex]::Escape($repo)) { return $true }
+  if ($null -ne $process -and [string]$process.CommandLine -match 'next[\\/]dist[\\/]bin[\\/]next.*dev.*--hostname\s+127\.0\.0\.1.*--port\s+3001') { return $true }
+  if ($null -ne $process -and [string]$process.CommandLine -match 'next[\\/]dist[\\/]server[\\/]lib[\\/]start-server\.js') {
+    $ancestor = $process
+    while ($null -ne $ancestor -and [int]$ancestor.ParentProcessId -gt 0) {
+      $ancestor = Get-CimInstance Win32_Process -Filter "ProcessId=$($ancestor.ParentProcessId)"
+      if ($null -ne $ancestor -and [string]$ancestor.CommandLine -match 'start-isolated-auth-dev\.mjs') { return $true }
+    }
+  }
   $current = $process
   while ($null -ne $current -and [int]$current.ParentProcessId -gt 0) {
     if ([int]$current.ParentProcessId -eq $rootId) { return $true }

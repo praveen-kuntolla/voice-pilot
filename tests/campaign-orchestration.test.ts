@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRetryPreview, MockCampaignOrchestrator, validateOrchestrationSchedule } from "@/lib/campaign-orchestration";
+import { buildRetryPreview, isCurrentOrchestrationRequest, MockCampaignOrchestrator, validateOrchestrationSchedule } from "@/lib/campaign-orchestration";
 import type { SimContact } from "@/lib/campaign-simulation";
 
 const campaign = { id: "campaign", organization_id: "org-a", agent_id: "agent", status: "draft", consent_required: true } as const;
@@ -8,6 +8,7 @@ const contacts = [
   { id: "b", name: "B", organization_id: "org-b", consent_status: "granted" },
   { id: "c", name: "C", organization_id: "org-a", consent_status: "revoked" },
 ] satisfies SimContact[];
+const threeEligible = ["a", "b", "d"].map((id) => ({ id, name: id, organization_id: "org-a", consent_status: "granted" as const })) satisfies SimContact[];
 
 describe("mock campaign orchestration", () => {
   it("enforces tenant and consent eligibility with idempotent processing", () => {
@@ -22,5 +23,7 @@ describe("mock campaign orchestration", () => {
     expect(buildRetryPreview("busy", 2)).toHaveLength(1); expect(buildRetryPreview("interested" as never)).toEqual([]); expect(buildRetryPreview("busy", 4)).toEqual([]);
   });
   it("cannot restart after stop and completes an empty queue", () => { const empty = new MockCampaignOrchestrator(campaign, [], "org-a"); expect(empty.start()).toBe(false); expect(empty.state).toBe("completed"); const runner = new MockCampaignOrchestrator(campaign, contacts, "org-a"); runner.start(); runner.stop(); expect(runner.start()).toBe(false); });
+  it("processes each eligible contact exactly once and completes", () => { const runner = new MockCampaignOrchestrator(campaign, threeEligible, "org-a"); expect(runner.summary()).toMatchObject({ processed: 0, remaining: 3 }); expect(runner.start()).toBe(true); expect(runner.nextUnprocessed()?.id).toBe("a"); expect(runner.process("a")).toBe(true); expect(runner.summary()).toMatchObject({ processed: 1, remaining: 2 }); expect(runner.nextUnprocessed()?.id).toBe("b"); expect(runner.process("b")).toBe(true); expect(runner.summary()).toMatchObject({ processed: 2, remaining: 1 }); expect(runner.process("a")).toBe(false); expect(runner.process("d")).toBe(true); expect(runner.summary()).toMatchObject({ processed: 3, remaining: 0 }); expect(runner.state).toBe("completed"); });
   it("rejects past schedules", () => { expect(validateOrchestrationSchedule("2020-01-01", "10:00", "Asia/Kolkata", Date.UTC(2025, 0, 1)).ok).toBe(false); });
+  it("rejects stale delayed responses after reset or campaign switching", () => { const runner = new MockCampaignOrchestrator(campaign, threeEligible, "org-a"); expect(isCurrentOrchestrationRequest(1, 2, runner, runner, "campaign", "campaign")).toBe(false); expect(isCurrentOrchestrationRequest(2, 2, runner, null, "campaign", "campaign")).toBe(false); expect(isCurrentOrchestrationRequest(2, 2, runner, runner, "campaign", "other")).toBe(false); });
 });
