@@ -2,13 +2,13 @@ import { z } from "zod";
 
 export const telephonyConfigSchema = z.object({
   provider: z.enum(["mock", "twilio", "telnyx"]).default("mock"),
-  mode: z.enum(["disabled", "sandbox", "production"]).default("disabled"),
+  mode: z.enum(["disabled", "sandbox"]).default("disabled"),
   accountReference: z.string().trim().min(1).max(120).optional(),
   fromNumber: z.string().trim().max(32).optional(),
 });
 
 export type TelephonyConfig = z.infer<typeof telephonyConfigSchema>;
-export type TelephonyReadiness = "disabled" | "sandbox" | "production";
+export type TelephonyReadiness = "disabled" | "sandbox";
 
 export function validateTelephonyConfig(input: unknown) {
   const parsed = telephonyConfigSchema.safeParse(input ?? {});

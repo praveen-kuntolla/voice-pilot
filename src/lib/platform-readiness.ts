@@ -12,6 +12,10 @@ export function readinessIndicators(telephony: TelephonyReadiness = "disabled"):
 }
 
 export function simulationAnalytics(summary: OrchestrationSummary, qualified: number, callbacks: number, appointments: number) {
-  const safeQualified = Math.min(Math.max(qualified, 0), summary.processed);
-  return { ...summary, qualified: safeQualified, callbacks: Math.max(0, callbacks), appointments: Math.max(0, appointments), conversionRate: summary.processed === 0 ? 0 : safeQualified / summary.processed };
+  const finite = (value: number) => Number.isFinite(value) ? Math.max(0, value) : 0;
+  const processed = Math.floor(finite(summary.processed));
+  const safeQualified = Math.min(Math.floor(finite(qualified)), processed);
+  const safeCallbacks = Math.min(Math.floor(finite(callbacks)), processed);
+  const safeAppointments = Math.min(Math.floor(finite(appointments)), processed);
+  return { ...summary, processed, qualified: safeQualified, callbacks: safeCallbacks, appointments: safeAppointments, conversionRate: processed === 0 ? 0 : Math.min(1, Math.max(0, safeQualified / processed)) };
 }

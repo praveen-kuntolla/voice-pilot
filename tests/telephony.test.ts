@@ -12,4 +12,5 @@ describe("telephony readiness", () => {
     const config = validateTelephonyConfig({ provider: "twilio", mode: "sandbox", accountReference: "test" });
     expect(config.ok).toBe(true);
   });
+  it("rejects production mode at configuration validation", () => { expect(validateTelephonyConfig({ provider: "twilio", mode: "production" }).ok).toBe(false); });
 });

@@ -19,7 +19,8 @@ describe("mock campaign orchestration", () => {
   });
   it("supports pause, resume, reset and retry previews without executing retries", () => {
     const runner = new MockCampaignOrchestrator(campaign, contacts, "org-a"); runner.start(); expect(runner.pause()).toBe(true); expect(runner.process("a")).toBe(false); expect(runner.resume()).toBe(true); runner.reset(); expect(runner.state).toBe("idle");
-    expect(buildRetryPreview("busy", 2)).toHaveLength(2); expect(buildRetryPreview("completed")).toEqual([]);
+    expect(buildRetryPreview("busy", 2)).toHaveLength(1); expect(buildRetryPreview("interested" as never)).toEqual([]); expect(buildRetryPreview("busy", 4)).toEqual([]);
   });
+  it("cannot restart after stop and completes an empty queue", () => { const empty = new MockCampaignOrchestrator(campaign, [], "org-a"); expect(empty.start()).toBe(false); expect(empty.state).toBe("completed"); const runner = new MockCampaignOrchestrator(campaign, contacts, "org-a"); runner.start(); runner.stop(); expect(runner.start()).toBe(false); });
   it("rejects past schedules", () => { expect(validateOrchestrationSchedule("2020-01-01", "10:00", "Asia/Kolkata", Date.UTC(2025, 0, 1)).ok).toBe(false); });
 });

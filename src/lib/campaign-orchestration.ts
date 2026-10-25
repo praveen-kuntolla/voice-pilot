@@ -12,8 +12,9 @@ export function validateOrchestrationSchedule(date: string, time: string, timeZo
 }
 
 export function buildRetryPreview(outcome: SimCallState, maxAttempts = 2): RetryPreview[] {
-  if (maxAttempts < 1 || outcome === "completed") return [];
-  return Array.from({ length: Math.min(maxAttempts, 3) }, (_, index) => ({ attempt: index + 2, delaySeconds: 60 * 2 ** index, outcome }));
+  const retryable = new Set<SimCallState>(["no_answer", "busy", "failed"]);
+  if (!retryable.has(outcome) || !Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 3) return [];
+  return Array.from({ length: maxAttempts - 1 }, (_, index) => ({ attempt: index + 2, delaySeconds: 60 * 2 ** index, outcome }));
 }
 
 export class MockCampaignOrchestrator {
@@ -22,7 +23,7 @@ export class MockCampaignOrchestrator {
   constructor(readonly campaign: SimCampaign, readonly contacts: SimContact[], readonly organizationId: string) {}
 
   eligible() { return this.contacts.filter((contact) => eligibleContacts(this.campaign, contact, this.organizationId).eligible); }
-  start() { if (this.state === "running" || this.state === "completed") return false; this.state = "running"; return true; }
+  start() { if (this.state === "running" || this.state === "completed" || this.state === "stopped") return false; if (this.eligible().length === 0) { this.state = "completed"; return false; } this.state = "running"; return true; }
   pause() { if (this.state !== "running") return false; this.state = "paused"; return true; }
   resume() { if (this.state !== "paused") return false; this.state = "running"; return true; }
   stop() { if (this.state === "stopped") return false; this.state = "stopped"; return true; }
