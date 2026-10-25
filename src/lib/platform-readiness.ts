@@ -1,13 +1,14 @@
 import type { OrchestrationSummary } from "./campaign-orchestration";
 import type { TelephonyReadiness } from "./telephony";
 
-export type ReadinessIndicator = { name: string; status: "disabled" | "sandbox" | "ready"; detail: string };
+export type ReadinessIndicator = { name: string; status: "disabled" | "sandbox" | "mock" | "contract-tested" | "missing-config" | "unverified"; detail: string };
 
 export function readinessIndicators(telephony: TelephonyReadiness = "disabled"): ReadinessIndicator[] {
   return [
     { name: "Telephony", status: telephony === "disabled" ? "disabled" : "sandbox", detail: telephony === "disabled" ? "No calls can be placed." : "Configuration is diagnostic only." },
-    { name: "Realtime voice", status: "disabled", detail: "LiveKit sessions are disabled." },
-    { name: "AI providers", status: "disabled", detail: "External STT, LLM and TTS providers are disabled." },
+    { name: "Offline contracts", status: "contract-tested", detail: "Deterministic provider lifecycle adapters are locally tested." },
+    { name: "Realtime voice", status: "disabled", detail: "LiveKit sessions are disabled; credentials and production controls are missing." },
+    { name: "AI providers", status: "disabled", detail: "External STT, LLM and TTS providers are disabled; webhook infrastructure is unverified." },
   ];
 }
 
