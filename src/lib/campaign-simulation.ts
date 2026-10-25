@@ -4,11 +4,12 @@ export type MockOutcome = "interested" | "not_interested" | "callback_requested"
 export type SimCallState = "queued" | "eligibility_checking" | "simulated_dialing" | "simulated_ringing" | "simulated_connected" | "mock_conversation" | "completed" | "no_answer" | "busy" | "failed" | "skipped" | "cancelled";
 export type SimContact = { id: string; name: string; consent_status?: "unknown" | "granted" | "revoked"; opted_out_at?: string | null; opt_out?: boolean; organization_id: string };
 export type SimCampaign = { id: string; organization_id: string; agent_id?: string | null; status: string; consent_required: boolean };
-export type SimEvent = { contactId: string; state: SimCallState; message: string; outcome?: MockOutcome };
-export type SimulationInteraction = { id: string; contactId: string; outcome: MockOutcome; eventIndex: number };
+export type QualificationAnswers = { service?: string; purchase?: "yes" | "no" | "maybe"; budget?: "low" | "medium" | "high"; timing?: "now" | "later" };
+export type SimEvent = { contactId: string; state: SimCallState; message: string; outcome?: MockOutcome; qualificationAnswers?: QualificationAnswers };
+export type SimulationInteraction = { id: string; contactId: string; outcome: MockOutcome; eventIndex: number; qualificationAnswers?: QualificationAnswers };
 export type QualificationStatus = "new_lead" | "qualified" | "highly_interested" | "interested" | "needs_follow_up" | "not_interested" | "unqualified" | "do_not_contact";
 export type QualificationResult = { score: number; status: QualificationStatus; explanation: string[]; nextAction: "callback" | "appointment" | "follow_up" | "none" };
-export function qualifySimulation(outcome: MockOutcome, answers: { service?: string; purchase?: "yes" | "no" | "maybe"; budget?: "low" | "medium" | "high"; timing?: "now" | "later" } = {}): QualificationResult {
+export function qualifySimulation(outcome: MockOutcome, answers: QualificationAnswers = {}): QualificationResult {
   if (outcome === "opted_out" || outcome === "wrong_number") return { score: 0, status: "do_not_contact", explanation: ["The selected scenario is excluded from outreach."], nextAction: "none" };
   if (outcome === "not_interested") return { score: 15, status: "not_interested", explanation: ["The selected scenario indicates no current interest."], nextAction: "none" };
   let score = 25; const explanation = ["The synthetic scenario starts with a neutral lead score."];
@@ -23,11 +24,11 @@ export function qualifySimulation(outcome: MockOutcome, answers: { service?: str
 }
 const terminalOutcomes = new Set<MockOutcome>(["interested", "not_interested", "callback_requested", "appointment_requested", "opted_out", "wrong_number"]);
 export function completedInteractions(events: SimEvent[]): SimulationInteraction[] {
-  return events.flatMap((event, eventIndex) => event.state === "completed" && event.outcome && terminalOutcomes.has(event.outcome) ? [{ id: `${event.contactId}:${eventIndex}`, contactId: event.contactId, outcome: event.outcome, eventIndex }] : []);
+  return events.flatMap((event, eventIndex) => event.state === "completed" && event.outcome && terminalOutcomes.has(event.outcome) ? [{ id: `${event.contactId}:${eventIndex}`, contactId: event.contactId, outcome: event.outcome, eventIndex, qualificationAnswers: event.qualificationAnswers }] : []);
 }
-export function qualificationForInteraction(events: SimEvent[], interactionId: string, answers: Parameters<typeof qualifySimulation>[1] = {}) {
+export function qualificationForInteraction(events: SimEvent[], interactionId: string) {
   const interaction = completedInteractions(events).find((item) => item.id === interactionId);
-  return interaction ? { interaction, result: qualifySimulation(interaction.outcome, answers) } : null;
+  return interaction ? { interaction, result: qualifySimulation(interaction.outcome, interaction.qualificationAnswers) } : null;
 }
 export type SimulationPreflightContact = { id: string; name: string; organization_id: string; consent_status: "unknown" | "granted" | "revoked"; opted_out_at: string | null; eligible: boolean; reason?: string };
 export type SimulationPreflight = { simulationOnly: true; organizationId: string; campaign: SimCampaign & { name: string }; agent: { id: string; name: string; language: string; organization_id: string }; contacts: SimulationPreflightContact[]; counts: { selected: number; eligible: number; excluded: number } };
@@ -49,7 +50,7 @@ export class MockCampaignSimulation {
   state: "idle" | "running" | "paused" | "stopped" | "completed" = "idle";
   private index = 0;
   constructor(readonly campaign: SimCampaign, readonly contacts: SimContact[], readonly agentOrganizationId?: string) {}
-  start(scenario: MockOutcome = "interested") {
+  start(scenario: MockOutcome = "interested", answers: QualificationAnswers = {}) {
     if (this.state === "running" || this.state === "completed" || this.state === "stopped") return false;
     this.state = "running";
     if (this.index < this.contacts.length) {
@@ -61,7 +62,7 @@ export class MockCampaignSimulation {
         this.events.push({ contactId: contact.id, state: "simulated_dialing", message: "Simulated dialing only." }, { contactId: contact.id, state: "simulated_ringing", message: "Simulated ringing only." }, { contactId: contact.id, state: "simulated_connected", message: "Simulated connection; no call was placed." });
         const outcome = outcomeFor(contact.id, scenario);
         const state: SimCallState = outcome === "no_answer" ? "no_answer" : outcome === "busy" ? "busy" : outcome === "error" ? "failed" : "completed";
-        this.events.push({ contactId: contact.id, state, outcome, message: `Simulation outcome: ${outcome}.` });
+        this.events.push({ contactId: contact.id, state, outcome, qualificationAnswers: { ...answers }, message: `Simulation outcome: ${outcome}.` });
       }
       this.index++;
     }
@@ -69,17 +70,17 @@ export class MockCampaignSimulation {
     return true;
   }
   pause() { if (this.state !== "running") return false; this.state = "paused"; return true; }
-  resume(scenario: MockOutcome = "interested") { if (this.state !== "paused") return false; return this.start(scenario); }
+  resume(scenario: MockOutcome = "interested", answers: QualificationAnswers = {}) { if (this.state !== "paused") return false; return this.start(scenario, answers); }
   stop() { if (this.state === "stopped" || this.state === "completed") return false; this.state = "stopped"; return true; }
   reset() { this.events.length = 0; this.index = 0; this.state = "idle"; }
 }
 
-export function simulationMetrics(events: SimEvent[], selectedCount = new Set(events.map((event) => event.contactId)).size, answers: Parameters<typeof qualifySimulation>[1] = {}) {
+export function simulationMetrics(events: SimEvent[], selectedCount = new Set(events.map((event) => event.contactId)).size) {
   const last = new Map<string, SimEvent>(); events.forEach((event) => last.set(event.contactId, event));
   const values = [...last.values()];
   const processed = values.length;
   const interactions = completedInteractions(events);
-  const qualificationResults = interactions.map((item) => qualifySimulation(item.outcome, answers));
+  const qualificationResults = interactions.map((item) => qualifySimulation(item.outcome, item.qualificationAnswers));
   return { selected: selectedCount, total: selectedCount, processed, remaining: Math.max(0, selectedCount - processed), eligible: values.filter((x) => x.state !== "skipped").length, skipped: values.filter((x) => x.state === "skipped").length, completed: values.filter((x) => x.state === "completed").length, connected: events.filter((x) => x.state === "simulated_connected").length, noAnswer: values.filter((x) => x.outcome === "no_answer").length, busy: values.filter((x) => x.outcome === "busy").length, failed: values.filter((x) => x.state === "failed").length, interested: values.filter((x) => x.outcome === "interested").length, callbackRequested: values.filter((x) => x.outcome === "callback_requested").length, appointmentRequested: values.filter((x) => x.outcome === "appointment_requested").length, qualified: qualificationResults.filter((result) => result.status === "qualified" || result.status === "highly_interested").length, highlyInterested: qualificationResults.filter((result) => result.status === "highly_interested").length };
 }
 
