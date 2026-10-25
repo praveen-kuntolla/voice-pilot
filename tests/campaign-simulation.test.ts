@@ -1,0 +1,20 @@
+import { describe, expect, it } from "vitest";
+import { MockCampaignSimulation, eligibleContacts, simulationMetrics } from "@/lib/campaign-simulation";
+const org = "org-a";
+const campaign = { id: "campaign", organization_id: org, agent_id: "agent", status: "test", consent_required: true };
+describe("mock campaign simulation", () => {
+  it("excludes unknown, revoked, opted-out and cross-tenant contacts", () => {
+    expect(eligibleContacts(campaign, { id: "1", name: "Unknown", organization_id: org, consent_status: "unknown" })).toMatchObject({ eligible: false });
+    expect(eligibleContacts(campaign, { id: "2", name: "Other", organization_id: "org-b", consent_status: "granted" })).toMatchObject({ eligible: false });
+    expect(eligibleContacts(campaign, { id: "3", name: "Allowed", organization_id: org, consent_status: "granted" }, "org-b")).toMatchObject({ eligible: false });
+  });
+  it("supports deterministic lifecycle, pause/resume and metrics", () => {
+    const simulation = new MockCampaignSimulation(campaign, [{ id: "1", name: "A", organization_id: org, consent_status: "granted" }, { id: "2", name: "B", organization_id: org, consent_status: "revoked" }], org);
+    expect(simulation.start("callback_requested")).toBe(true); expect(simulation.state).toBe("running"); expect(simulation.pause()).toBe(true); expect(simulation.resume("callback_requested")).toBe(true); expect(simulation.state).toBe("completed");
+    expect(simulationMetrics(simulation.events)).toMatchObject({ total: 2, eligible: 1, skipped: 1, completed: 1, callbackRequested: 1 });
+    expect(simulation.start()).toBe(false); simulation.reset(); expect(simulation.state).toBe("idle");
+  });
+  it("prevents duplicate stop and never creates a real call state", () => {
+    const simulation = new MockCampaignSimulation(campaign, [], org); expect(simulation.stop()).toBe(true); expect(simulation.stop()).toBe(false); expect(simulation.events).toHaveLength(0);
+  });
+});
