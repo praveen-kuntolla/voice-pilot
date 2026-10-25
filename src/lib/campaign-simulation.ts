@@ -5,6 +5,21 @@ export type SimCallState = "queued" | "eligibility_checking" | "simulated_dialin
 export type SimContact = { id: string; name: string; consent_status?: "unknown" | "granted" | "revoked"; opted_out_at?: string | null; opt_out?: boolean; organization_id: string };
 export type SimCampaign = { id: string; organization_id: string; agent_id?: string | null; status: string; consent_required: boolean };
 export type SimEvent = { contactId: string; state: SimCallState; message: string; outcome?: MockOutcome };
+export type QualificationStatus = "new_lead" | "qualified" | "highly_interested" | "interested" | "needs_follow_up" | "not_interested" | "unqualified" | "do_not_contact";
+export type QualificationResult = { score: number; status: QualificationStatus; explanation: string[]; nextAction: "callback" | "appointment" | "follow_up" | "none" };
+export function qualifySimulation(outcome: MockOutcome, answers: { service?: string; purchase?: "yes" | "no" | "maybe"; budget?: "low" | "medium" | "high"; timing?: "now" | "later" } = {}): QualificationResult {
+  if (outcome === "opted_out" || outcome === "wrong_number") return { score: 0, status: "do_not_contact", explanation: ["The selected scenario is excluded from outreach."], nextAction: "none" };
+  if (outcome === "not_interested") return { score: 15, status: "not_interested", explanation: ["The selected scenario indicates no current interest."], nextAction: "none" };
+  let score = 25; const explanation = ["The synthetic scenario starts with a neutral lead score."];
+  if (answers.service) { score += 20; explanation.push("A service need was provided."); }
+  if (answers.purchase === "yes") { score += 25; explanation.push("Purchase intent was selected."); } else if (answers.purchase === "maybe") { score += 10; explanation.push("Purchase intent was uncertain."); }
+  if (answers.budget === "high") { score += 15; explanation.push("A high synthetic budget was selected."); } else if (answers.budget === "medium") { score += 8; explanation.push("A medium synthetic budget was selected."); }
+  if (answers.timing === "now") { score += 15; explanation.push("Immediate timing was selected."); } else if (answers.timing === "later") { score += 5; explanation.push("Later timing was selected."); }
+  if (score >= 85) return { score, status: "highly_interested", explanation, nextAction: "appointment" };
+  if (score >= 65) return { score, status: "qualified", explanation, nextAction: "callback" };
+  if (score >= 45) return { score, status: "interested", explanation, nextAction: "follow_up" };
+  return { score, status: "needs_follow_up", explanation, nextAction: "follow_up" };
+}
 export type SimulationPreflightContact = { id: string; name: string; organization_id: string; consent_status: "unknown" | "granted" | "revoked"; opted_out_at: string | null; eligible: boolean; reason?: string };
 export type SimulationPreflight = { simulationOnly: true; organizationId: string; campaign: SimCampaign & { name: string }; agent: { id: string; name: string; language: string; organization_id: string }; contacts: SimulationPreflightContact[]; counts: { selected: number; eligible: number; excluded: number } };
 export const simulationPreflightSchema = z.object({ simulationOnly: z.literal(true), organizationId: z.string().min(1), campaign: z.object({ id: z.string().min(1), name: z.string(), status: z.string(), organization_id: z.string().min(1), agent_id: z.string().nullable(), consent_required: z.boolean() }), agent: z.object({ id: z.string().min(1), name: z.string(), language: z.string(), organization_id: z.string().min(1) }), contacts: z.array(z.object({ id: z.string().min(1), name: z.string(), organization_id: z.string().min(1), consent_status: z.enum(["unknown", "granted", "revoked"]), opted_out_at: z.string().nullable(), eligible: z.boolean(), reason: z.string().optional() })), counts: z.object({ selected: z.number().int().nonnegative(), eligible: z.number().int().nonnegative(), excluded: z.number().int().nonnegative() }) }).strict();

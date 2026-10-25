@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MockCampaignSimulation, eligibleContacts, simulationMetrics } from "@/lib/campaign-simulation";
+import { MockCampaignSimulation, eligibleContacts, qualifySimulation, simulationMetrics } from "@/lib/campaign-simulation";
 const org = "org-a";
 const campaign = { id: "campaign", organization_id: org, agent_id: "agent", status: "test", consent_required: true };
 describe("mock campaign simulation", () => {
@@ -30,5 +30,10 @@ describe("mock campaign simulation", () => {
     const simulation = new MockCampaignSimulation(campaign, [{ id: "6", name: "A", organization_id: org, consent_status: "granted" }, { id: "7", name: "B", organization_id: org, consent_status: "granted" }], org);
     simulation.start("busy");
     expect(simulationMetrics(simulation.events, simulation.contacts.length)).toMatchObject({ selected: 2, processed: 1, remaining: 1, busy: 1 });
+  });
+  it("scores deterministic synthetic qualification scenarios with explanations", () => {
+    expect(qualifySimulation("interested", { service: "voice", purchase: "yes", budget: "high", timing: "now" })).toMatchObject({ status: "highly_interested", nextAction: "appointment" });
+    expect(qualifySimulation("callback_requested", { service: "voice", purchase: "yes" }).explanation.length).toBeGreaterThan(1);
+    expect(qualifySimulation("opted_out")).toMatchObject({ status: "do_not_contact", score: 0, nextAction: "none" });
   });
 });
