@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export type ReplayStore = { claim(key: string, expiresAt: number, now?: number): boolean };
-export class MemoryReplayStore implements ReplayStore { private readonly entries = new Map<string, number>(); claim(key: string, expiresAt: number, now = Date.now()) { for (const [item, expiry] of this.entries) if (expiry <= now) this.entries.delete(item); if (this.entries.has(key)) return false; this.entries.set(key, expiresAt); return true; } }
+export class MemoryReplayStore implements ReplayStore { private readonly entries = new Map<string, number>(); claim(key: string, expiresAt: number, now = Date.now()) { if (!key || !Number.isSafeInteger(expiresAt) || !Number.isSafeInteger(now) || expiresAt <= now) return false; for (const [item, expiry] of this.entries) if (expiry <= now) this.entries.delete(item); if (this.entries.has(key)) return false; this.entries.set(key, expiresAt); return true; } }
 export type WebhookInput = { organizationId: string; provider: string; eventId: string; timestamp: number; body: string; signature: string };
 function field(value: string) { const bytes = Buffer.from(value, "utf8"); return Buffer.concat([Buffer.from(`${bytes.length}:`, "ascii"), bytes]); }
 export function canonicalWebhookPayload(input: Omit<WebhookInput, "signature">) { return Buffer.concat([field(input.organizationId), field(input.provider), field(input.eventId), field(String(input.timestamp)), field(input.body)]); }

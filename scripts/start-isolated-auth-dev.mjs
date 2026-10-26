@@ -16,7 +16,10 @@ if (values.SUPABASE_PUBLIC_URL !== "http://127.0.0.1:55421" || !values.ANON_KEY 
 }
 
 const nextBinary = resolve("node_modules/next/dist/bin/next");
-const child = spawn(process.execPath, [nextBinary, "dev", "--hostname", "127.0.0.1", "--port", process.env.PORT || "3000"], {
+const mode = process.argv[2] || "dev";
+if (!["dev", "build", "start"].includes(mode)) throw new Error("Invalid isolated Next.js mode.");
+const argumentsForMode = mode === "build" ? [nextBinary, "build"] : [nextBinary, mode, "--hostname", "127.0.0.1", "--port", process.env.PORT || "3000"];
+const child = spawn(process.execPath, argumentsForMode, {
   cwd: process.cwd(),
   env: {
     ...process.env,
@@ -26,6 +29,7 @@ const child = spawn(process.execPath, [nextBinary, "dev", "--hostname", "127.0.0
     VOICE_WORKER_ENABLED: "false",
     VOICE_REALTIME_ENABLED: "false",
     VOICE_OUTBOUND_ENABLED: "false",
+    E2E_ISOLATED_AUTH: "true",
   },
   stdio: "inherit",
   shell: false,

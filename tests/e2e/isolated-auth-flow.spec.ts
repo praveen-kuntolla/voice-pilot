@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { waitForLoginHydration } from "./login-readiness";
 
 const configured = () => process.env.E2E_ISOLATED_AUTH === "true" && Boolean(process.env.E2E_EMAIL_A && process.env.E2E_PASSWORD_A);
 
 async function login(page: import("@playwright/test").Page, email: string, password: string) {
-  await page.goto("/login");
+  await waitForLoginHydration(page);
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: /log in/i }).click();
