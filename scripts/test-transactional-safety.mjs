@@ -29,8 +29,11 @@ const streamSql = (database, sql) => new Promise((resolvePromise, reject) => {
   child.on("close", (code) => code === 0 ? resolvePromise(out.trim()) : reject(new Error(`Local psql failed (${code}): ${err.slice(0, 500)}`)));
   child.stdin.end(sql);
 });
+const delay = (milliseconds) => new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 const expect = (actual, wanted, name) => { if (actual !== wanted) throw new Error(`${name}: expected ${wanted}, got ${actual}`); console.log(`PASS ${name}`); };
 const orgA = randomUUID(), orgB = randomUUID(), actor = randomUUID(), outsider = randomUUID();
+const asActor = (sql, identity = actor) => psql(testDb, `begin; set local request.jwt.claim.sub='${identity}'; ${sql}; commit;`)
+  .split(/\r?\n/).filter((line) => !["BEGIN", "SET", "COMMIT"].includes(line)).join("\n");
 let created = false;
 try {
   exec(["exec", container, "psql", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres", "-c", `create database ${testDb}`]);
@@ -48,18 +51,23 @@ try {
   expect(psql(testDb, "select has_function_privilege('authenticated','voicepilot_safety.claim_replay(uuid,text,text,timestamptz)','execute')"), "f", "no authenticated replay execution");
   expect(psql(testDb, "select has_function_privilege('anon','voicepilot_safety.set_global_stop(boolean,uuid)','execute')"), "f", "no anonymous control execution");
   expect(psql(testDb, "select has_function_privilege('service_role','voicepilot_safety.claim_replay(uuid,text,text,timestamptz)','execute')"), "t", "service-only replay execution");
+  expect(psql(testDb, "select count(*) from pg_indexes where schemaname in ('public','voicepilot_safety') and indexname in ('provider_replay_claims_expiry_idx','provider_action_reservations_active_idx','provider_usage_ledger_org_time_idx')"), "3", "required migration indexes exist");
+  expect(psql(testDb, "select count(*) from information_schema.tables where table_schema='voicepilot_safety' and table_name like 'provider_%'"), "7", "private safety tables created");
   expect(psql(testDb, `select voicepilot_safety.safety_enabled('${orgA}')`), "f", "missing control fails closed");
-  expect(psql(testDb, `select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',false,'${outsider}'); select voicepilot_safety.set_budget('${orgA}',100,'${outsider}')`), "f\nf\nf", "unauthorized control changes rejected");
+  expect(asActor(`select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',false,'${outsider}'); select voicepilot_safety.set_budget('${orgA}',100,'${outsider}')`, outsider), "f\nf\nf", "unauthorized control changes rejected");
   expect(psql(testDb, `insert into voicepilot_safety.provider_global_operators(actor_id,enabled) values('${actor}',true); select true`), "INSERT 0 1\nt", "offline global operator fixture");
-  expect(psql(testDb, `select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgB}',false,'${actor}')`), "t\nt\nt", "explicit control setup");
+  expect(psql(testDb, `select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',false,'${actor}')`), "f\nf", "missing actor context fails closed");
+  expect(asActor(`select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgB}',false,'${actor}')`), "t\nt\nt", "explicit control setup");
+  expect(asActor(`select voicepilot_safety.set_global_stop(true,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',true,'${actor}'); select voicepilot_safety.set_limits('${orgA}','mock',9,9,'${actor}'); select voicepilot_safety.set_budget('${orgA}',999,'${actor}')`, outsider), "f\nf\nf\nf", "spoofed privileged actor rejected");
   expect(psql(testDb, `set role service_role; select emergency_stop from voicepilot_safety.provider_global_stop where singleton=true; select emergency_stop from public.provider_safety_controls where organization_id='${orgA}'; reset role`), "SET\nf\nf\nRESET", "service role reads false control state");
-  expect(psql(testDb, `select voicepilot_safety.set_global_stop(true,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',true,'${actor}'); set role service_role; select emergency_stop from voicepilot_safety.provider_global_stop where singleton=true; select emergency_stop from public.provider_safety_controls where organization_id='${orgA}'; reset role; select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',false,'${actor}')`), "t\nt\nSET\nt\nt\nRESET\nt\nt", "service role reads true control state");
+  expect(asActor(`select voicepilot_safety.set_global_stop(true,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',true,'${actor}'); set role service_role; select emergency_stop from voicepilot_safety.provider_global_stop where singleton=true; select emergency_stop from public.provider_safety_controls where organization_id='${orgA}'; reset role; select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',false,'${actor}')`), "t\nt\nt\nt\nRESET\nt\nt", "service role reads true control state");
   expect(psql(testDb, `set role service_role; select count(*) from public.provider_safety_controls where organization_id='00000000-0000-0000-0000-000000000000'; reset role`), "SET\n0\nRESET", "service role observes missing organization control");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.reserve_action('${orgA}','mock','before-limits',1,'2099-01-01')`)).ok, false, "missing capacity policy fails closed");
-  expect(psql(testDb, `select voicepilot_safety.set_limits('${orgA}','mock',1,1,'${outsider}'); select voicepilot_safety.set_limits('${orgA}','mock',1,1,'${actor}'); select voicepilot_safety.set_limits('${orgB}','mock',1,1,'${actor}')`), "f\nt\nt", "admin-only authoritative limits");
+  expect(asActor(`select voicepilot_safety.set_limits('${orgA}','mock',1,1,'${outsider}')`, outsider), "f", "ordinary member cannot set limits");
+  expect(asActor(`select voicepilot_safety.set_limits('${orgA}','mock',1,1,'${actor}'); select voicepilot_safety.set_limits('${orgB}','mock',1,1,'${actor}')`), "t\nt", "admin-only authoritative limits");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.reserve_action('${orgA}','mock','wrong-limit',2,'2099-01-01')`)).ok, false, "caller cannot raise capacity limit");
   expect(psql(testDb, `select voicepilot_safety.claim_rate('${orgA}','mock',2)`), "f", "caller cannot raise rate limit");
-  expect(psql(testDb, `select voicepilot_safety.set_budget('${orgA}',100,'${actor}')`), "t", "budget setup");
+  expect(asActor(`select voicepilot_safety.set_budget('${orgA}',100,'${actor}')`), "t", "budget setup");
   const expires = "2099-01-01T00:00:00Z";
   const race = (sql) => Promise.allSettled([streamSql(testDb, sql), streamSql(testDb, sql)]);
   let results = await race(`select voicepilot_safety.claim_replay('${orgA}','mock','race','${expires}')`);
@@ -71,6 +79,12 @@ try {
   expect(psql(testDb, `select voicepilot_safety.cleanup_replay(clock_timestamp(),100)`), "0", "live replay retained");
   psql(testDb, `update public.provider_replay_claims set expires_at='2000-01-01' where organization_id='${orgA}' and provider='other-provider'`);
   expect(psql(testDb, `select voicepilot_safety.cleanup_replay(clock_timestamp(),100); select voicepilot_safety.claim_replay('${orgA}','other-provider','race','${expires}')`), "1\nt", "expired replay cleanup and reuse");
+  psql(testDb, `update public.provider_replay_claims set expires_at='2000-01-01' where organization_id='${orgA}' and provider='other-provider'`);
+  const heldCleanupRow = streamSql(testDb, `begin; select 1 from public.provider_replay_claims where organization_id='${orgA}' and provider='other-provider' for update; select pg_sleep(0.7); commit;`);
+  await delay(200);
+  expect(psql(testDb, "select voicepilot_safety.cleanup_replay(clock_timestamp(),100)"), "0", "cleanup skips locked rows without unsafe blocking");
+  await heldCleanupRow;
+  expect(psql(testDb, "select voicepilot_safety.cleanup_replay(clock_timestamp(),100)"), "1", "cleanup succeeds on bounded retry");
   expect(psql(testDb, `select voicepilot_safety.claim_rate('${orgA}','mock',1); select voicepilot_safety.claim_rate('${orgA}','mock',1); select voicepilot_safety.claim_rate('${orgB}','mock',1)`), "t\nf\nt", "tenant-bound rate window");
   psql(testDb, `insert into voicepilot_safety.provider_rate_windows values('${orgA}','mock','2000-01-01',1)`);
   expect(psql(testDb, "select voicepilot_safety.cleanup_rate_windows(date_trunc('minute',clock_timestamp()),100)"), "1", "old rate bucket cleanup");
@@ -87,6 +101,23 @@ try {
   expect(psql(testDb, `select voicepilot_safety.release_action('${orgB}','mock','${activeId}'); select voicepilot_safety.release_action('${orgA}','mock','${activeId}')`), "f\nt", "tenant-scoped release");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.reserve_action('${orgA}','mock','${activeKey}',1,'${expires}')`)).error, "conflict", "released reservation key cannot restart");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.reserve_action('${orgA}','mock','new',1,'${expires}')`)).ok, true, "released capacity recovered");
+  const globalOperation = streamSql(testDb, `begin; select voicepilot_safety.reserve_action('${orgB}','mock','global-race',1,'${expires}'); select pg_sleep(0.8); commit;`);
+  await delay(200);
+  const globalStopStarted = Date.now();
+  expect(await streamSql(testDb, `begin; set local request.jwt.claim.sub='${actor}'; select voicepilot_safety.set_global_stop(true,'${actor}'); commit;`), "BEGIN\nSET\nt\nCOMMIT", "global stop wins after pending operation boundary");
+  expect(Date.now() - globalStopStarted >= 400, true, "global stop waits for safety-checked transaction");
+  await globalOperation;
+  expect(JSON.parse(psql(testDb, `select voicepilot_safety.reserve_action('${orgA}','mock','blocked-after-global-stop',1,'${expires}')`)).ok, false, "fresh operation blocked after global stop");
+  expect(asActor(`select voicepilot_safety.set_global_stop(false,'${actor}')`), "t", "global stop cleared after drill");
+  expect(asActor(`select voicepilot_safety.set_limits('${orgA}','org-race',1,1,'${actor}')`), "t", "organization race provider configured");
+  const organizationOperation = streamSql(testDb, `begin; select voicepilot_safety.reserve_action('${orgA}','org-race','org-race',1,'${expires}'); select pg_sleep(0.8); commit;`);
+  await delay(200);
+  const organizationStopStarted = Date.now();
+  expect(await streamSql(testDb, `begin; set local request.jwt.claim.sub='${actor}'; select voicepilot_safety.set_organization_stop('${orgA}',true,'${actor}'); commit;`), "BEGIN\nSET\nt\nCOMMIT", "organization stop wins after pending operation boundary");
+  expect(Date.now() - organizationStopStarted >= 400, true, "organization stop waits for safety-checked transaction");
+  await organizationOperation;
+  expect(JSON.parse(psql(testDb, `select voicepilot_safety.reserve_action('${orgA}','org-race','blocked',1,'${expires}')`)).ok, false, "fresh operation blocked after organization stop");
+  expect(asActor(`select voicepilot_safety.set_organization_stop('${orgA}',false,'${actor}')`), "t", "organization stop cleared after drill");
   results = await Promise.allSettled([
     streamSql(testDb, `select voicepilot_safety.record_usage('${orgA}','u1',60,100)`),
     streamSql(testDb, `select voicepilot_safety.record_usage('${orgA}','u2',60,100)`),
@@ -95,16 +126,17 @@ try {
   expect(psql(testDb, `select used_cents from voicepilot_safety.provider_usage_accounts where organization_id='${orgA}'`), "60", "usage counted once");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.record_usage('${orgA}','u1',61,100)`)).ok, false, "conflicting usage rejected");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.record_usage('${orgB}','u1',1,100)`)).ok, false, "other tenant lacks budget");
-  expect(psql(testDb, `select voicepilot_safety.set_global_stop(true,'${actor}'); select voicepilot_safety.safety_enabled('${orgA}')`), "t\nf", "global stop authoritative");
+  expect(asActor(`select voicepilot_safety.set_global_stop(true,'${actor}'); select voicepilot_safety.safety_enabled('${orgA}')`), "t\nf", "global stop authoritative");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.reserve_action('${orgA}','mock','stopped',2,'${expires}')`)).ok, false, "global stop blocks reservations");
-  expect(psql(testDb, `select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',true,'${actor}'); select voicepilot_safety.safety_enabled('${orgA}'); select voicepilot_safety.safety_enabled('${orgB}')`), "t\nt\nf\nt", "organization stop isolated");
-  expect(psql(testDb, `select voicepilot_safety.set_organization_stop('${orgA}',false,'${actor}')`), "t", "organization stop cleared");
-  expect(psql(testDb, `select voicepilot_safety.set_global_stop(false,'${outsider}'); select voicepilot_safety.set_organization_stop('${orgA}',true,'${outsider}')`), "f\nf", "outsider cannot change control state");
+  expect(asActor(`select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',true,'${actor}'); select voicepilot_safety.safety_enabled('${orgA}'); select voicepilot_safety.safety_enabled('${orgB}')`), "t\nt\nf\nt", "organization stop isolated");
+  expect(asActor(`select voicepilot_safety.set_organization_stop('${orgA}',false,'${actor}')`), "t", "organization stop cleared");
+  expect(asActor(`select voicepilot_safety.set_global_stop(false,'${outsider}'); select voicepilot_safety.set_organization_stop('${orgA}',true,'${outsider}')`, outsider), "f\nf", "outsider cannot change control state");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.reserve_usage('${orgA}','reservation',40,100,'${expires}')`)).ok, true, "usage reserved");
+  expect(JSON.parse(psql(testDb, `select voicepilot_safety.settle_usage('${orgA}','reservation',41)`)).ok, false, "usage settlement above reservation rejected");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.settle_usage('${orgA}','reservation',30)`)).ok, true, "usage settled");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.settle_usage('${orgA}','reservation',30)`)).recorded, false, "settlement idempotent");
   expect(psql(testDb, `select used_cents || ':' || reserved_cents from voicepilot_safety.provider_usage_accounts where organization_id='${orgA}'`), "90:0", "settlement account totals");
-  expect(psql(testDb, `select voicepilot_safety.set_budget('${orgA}',89,'${actor}')`), "f", "cannot reduce budget below committed usage");
+  expect(asActor(`select voicepilot_safety.set_budget('${orgA}',89,'${actor}')`), "f", "cannot reduce budget below committed usage");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.reserve_usage('${orgA}','expiring',10,100,clock_timestamp()+interval '1 hour')`)).ok, true, "usage reservation accepted");
   psql(testDb, `update voicepilot_safety.provider_usage_reservations set expires_at=clock_timestamp()-interval '1 second' where organization_id='${orgA}' and idempotency_key='expiring'`);
   expect(psql(testDb, `select voicepilot_safety.expire_usage('${orgA}',10); select reserved_cents from voicepilot_safety.provider_usage_accounts where organization_id='${orgA}'`), "1\n0", "expired reservation recovered");
@@ -121,7 +153,18 @@ try {
   denied = false; try { psql(testDb, `set role authenticated; select voicepilot_safety.claim_replay('${orgA}','mock','forbidden','${expires}')`); } catch { denied = true; }
   expect(denied, true, "authenticated privileged routine execution denied");
   expect(psql(testDb, "select count(*) > 0 from voicepilot_safety.provider_safety_audit"), "t", "control and accounting audit written");
+  expect(psql(testDb, "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='voicepilot_safety' and p.prosecdef and p.proconfig @> array['search_path=pg_catalog']"), psql(testDb, "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='voicepilot_safety'"), "all privileged routines fix search_path");
   console.log("POSTGRES_SAFETY_OK disposable local database tests passed");
+  await streamSql(testDb, `begin;
+    revoke all on all functions in schema voicepilot_safety from service_role;
+    drop schema voicepilot_safety cascade;
+    drop table public.provider_usage_ledger;
+    drop table public.provider_action_reservations;
+    drop table public.provider_safety_controls;
+    drop table public.provider_replay_claims;
+    commit;`);
+  expect(psql(testDb, "select count(*) from information_schema.schemata where schema_name='voicepilot_safety'; select count(*) from information_schema.tables where table_schema='public' and table_name like 'provider_%'; select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='voicepilot_safety'; select count(*) from public.organizations; select count(*) from auth.users"), "0\n0\n0\n2\n2", "rollback removes only safety objects and preserves fixtures");
+  console.log("ROLLBACK_OK migration 012-013 rollback rehearsal passed");
 } finally {
   if (created) {
     exec(["exec", container, "psql", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres", "-c", `drop database ${testDb} with (force)`]);
