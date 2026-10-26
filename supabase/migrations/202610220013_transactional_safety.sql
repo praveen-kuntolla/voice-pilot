@@ -58,6 +58,10 @@ create table if not exists voicepilot_safety.provider_safety_audit (
 revoke all on all tables in schema voicepilot_safety from public, anon, authenticated;
 revoke all on public.provider_replay_claims, public.provider_safety_controls,
   public.provider_action_reservations, public.provider_usage_ledger from public, anon, authenticated;
+-- The server adapter reads only these two control tables. Mutations remain
+-- restricted to the SECURITY DEFINER routines below.
+grant select on public.provider_safety_controls to service_role;
+grant select on voicepilot_safety.provider_global_stop to service_role;
 alter table voicepilot_safety.provider_global_stop enable row level security;
 alter table voicepilot_safety.provider_global_operators enable row level security;
 alter table voicepilot_safety.provider_usage_accounts enable row level security;

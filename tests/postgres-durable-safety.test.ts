@@ -22,6 +22,16 @@ describe("server-only PostgreSQL safety adapter", () => {
     expect(await store.reserve(request, 1)).toEqual({ ok: false, error: "unavailable" });
     expect(await store.recordUsage({ organizationId: org, idempotencyKey: "u", amountCents: 1, budgetCents: 2 }, 1)).toEqual({ ok: false, error: "unavailable" });
   });
+  it("returns explicit true and false control values and treats absent rows as unavailable", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [{ emergency_stop: true }] })
+      .mockResolvedValueOnce({ rows: [{ emergency_stop: false }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const store = new PostgresDurableSafetyStore(query as unknown as SafetyQuery);
+    expect(await store.getControl(org)).toEqual({ organizationId: org, emergencyStop: true });
+    expect(await store.getGlobalControl()).toEqual({ emergencyStop: false });
+    expect(await store.getControl(org)).toBeUndefined();
+  });
   it("rejects malformed identities and unsafe monetary values before querying", async () => {
     const query = vi.fn(async () => ({ rows: [] })) as unknown as SafetyQuery;
     const store = new PostgresDurableSafetyStore(query);

@@ -35,12 +35,16 @@ let created = false;
 try {
   exec(["exec", container, "psql", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres", "-c", `create database ${testDb}`]);
   created = true;
-  await streamSql(testDb, `create schema auth; create table auth.users(id uuid primary key); create table public.organizations(id uuid primary key); create table public.organization_members(organization_id uuid,user_id uuid,role text); insert into auth.users values('${actor}'),('${outsider}'); insert into public.organizations values('${orgA}'),('${orgB}'); insert into public.organization_members values('${orgA}','${actor}','owner'),('${orgB}','${actor}','admin'),('${orgB}','${outsider}','member');`);
+  await streamSql(testDb, `create schema auth; create table auth.users(id uuid primary key); create type public.member_role as enum ('owner','admin','member','viewer'); create table public.organizations(id uuid primary key); create table public.organization_members(organization_id uuid,user_id uuid,role public.member_role); insert into auth.users values('${actor}'),('${outsider}'); insert into public.organizations values('${orgA}'),('${orgB}'); insert into public.organization_members values('${orgA}','${actor}','owner'),('${orgB}','${actor}','admin'),('${orgB}','${outsider}','member');`);
   for (const filename of ["202610220012_durable_safety_foundations.sql", "202610220013_transactional_safety.sql"]) {
     const body = readFileSync(resolve("supabase/migrations", filename), "utf8");
     await streamSql(testDb, `begin;\n${body}\ncommit;`);
   }
   expect(psql(testDb, "select has_schema_privilege('authenticated','voicepilot_safety','usage')"), "f", "voicepilot_safety schema hidden from authenticated");
+  expect(psql(testDb, "select has_table_privilege('service_role','public.provider_safety_controls','select'); select has_table_privilege('service_role','voicepilot_safety.provider_global_stop','select')"), "t\nt", "service role has minimum control reads");
+  expect(psql(testDb, "select has_table_privilege('service_role','public.provider_safety_controls','insert,update,delete,truncate'); select has_table_privilege('service_role','voicepilot_safety.provider_global_stop','insert,update,delete,truncate')"), "f\nf", "service role has no direct control mutation");
+  expect(psql(testDb, "select has_table_privilege('anon','public.provider_safety_controls','select,insert,update,delete,truncate'); select has_table_privilege('authenticated','voicepilot_safety.provider_global_stop','select,insert,update,delete,truncate')"), "f\nf", "client roles have no control table privileges");
+  expect(psql(testDb, "select count(*) from information_schema.routine_privileges where specific_schema='voicepilot_safety' and grantee='PUBLIC'"), "0", "no public privileged routine execution");
   expect(psql(testDb, "select has_function_privilege('authenticated','voicepilot_safety.claim_replay(uuid,text,text,timestamptz)','execute')"), "f", "no authenticated replay execution");
   expect(psql(testDb, "select has_function_privilege('anon','voicepilot_safety.set_global_stop(boolean,uuid)','execute')"), "f", "no anonymous control execution");
   expect(psql(testDb, "select has_function_privilege('service_role','voicepilot_safety.claim_replay(uuid,text,text,timestamptz)','execute')"), "t", "service-only replay execution");
@@ -48,6 +52,9 @@ try {
   expect(psql(testDb, `select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',false,'${outsider}'); select voicepilot_safety.set_budget('${orgA}',100,'${outsider}')`), "f\nf\nf", "unauthorized control changes rejected");
   expect(psql(testDb, `insert into voicepilot_safety.provider_global_operators(actor_id,enabled) values('${actor}',true); select true`), "INSERT 0 1\nt", "offline global operator fixture");
   expect(psql(testDb, `select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgB}',false,'${actor}')`), "t\nt\nt", "explicit control setup");
+  expect(psql(testDb, `set role service_role; select emergency_stop from voicepilot_safety.provider_global_stop where singleton=true; select emergency_stop from public.provider_safety_controls where organization_id='${orgA}'; reset role`), "SET\nf\nf\nRESET", "service role reads false control state");
+  expect(psql(testDb, `select voicepilot_safety.set_global_stop(true,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',true,'${actor}'); set role service_role; select emergency_stop from voicepilot_safety.provider_global_stop where singleton=true; select emergency_stop from public.provider_safety_controls where organization_id='${orgA}'; reset role; select voicepilot_safety.set_global_stop(false,'${actor}'); select voicepilot_safety.set_organization_stop('${orgA}',false,'${actor}')`), "t\nt\nSET\nt\nt\nRESET\nt\nt", "service role reads true control state");
+  expect(psql(testDb, `set role service_role; select count(*) from public.provider_safety_controls where organization_id='00000000-0000-0000-0000-000000000000'; reset role`), "SET\n0\nRESET", "service role observes missing organization control");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.reserve_action('${orgA}','mock','before-limits',1,'2099-01-01')`)).ok, false, "missing capacity policy fails closed");
   expect(psql(testDb, `select voicepilot_safety.set_limits('${orgA}','mock',1,1,'${outsider}'); select voicepilot_safety.set_limits('${orgA}','mock',1,1,'${actor}'); select voicepilot_safety.set_limits('${orgB}','mock',1,1,'${actor}')`), "f\nt\nt", "admin-only authoritative limits");
   expect(JSON.parse(psql(testDb, `select voicepilot_safety.reserve_action('${orgA}','mock','wrong-limit',2,'2099-01-01')`)).ok, false, "caller cannot raise capacity limit");
@@ -107,6 +114,10 @@ try {
   expect(psql(testDb, `select voicepilot_safety.claim_replay('${orgA}','mock','after-interruption','${expires}')`), "t", "database recovers after cancelled statement");
   let denied = false; try { psql(testDb, "set role authenticated; select * from public.provider_replay_claims"); } catch { denied = true; }
   expect(denied, true, "authenticated direct table access denied");
+  denied = false; try { psql(testDb, "set role anon; select * from public.provider_safety_controls"); } catch { denied = true; }
+  expect(denied, true, "anonymous control read denied");
+  denied = false; try { psql(testDb, `set role authenticated; update public.provider_safety_controls set emergency_stop=true where organization_id='${orgA}'`); } catch { denied = true; }
+  expect(denied, true, "authenticated control mutation denied");
   denied = false; try { psql(testDb, `set role authenticated; select voicepilot_safety.claim_replay('${orgA}','mock','forbidden','${expires}')`); } catch { denied = true; }
   expect(denied, true, "authenticated privileged routine execution denied");
   expect(psql(testDb, "select count(*) > 0 from voicepilot_safety.provider_safety_audit"), "t", "control and accounting audit written");
