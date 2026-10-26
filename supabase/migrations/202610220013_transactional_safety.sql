@@ -70,11 +70,25 @@ alter table voicepilot_safety.provider_rate_windows enable row level security;
 alter table voicepilot_safety.provider_limits enable row level security;
 alter table voicepilot_safety.provider_safety_audit enable row level security;
 
+create or replace function voicepilot_safety.current_actor() returns uuid
+language plpgsql stable security definer set search_path = pg_catalog as $$
+declare raw_actor text;
+begin
+  raw_actor := nullif(current_setting('request.jwt.claim.sub',true),'');
+  if raw_actor is null or raw_actor !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then return null; end if;
+  return raw_actor::uuid;
+exception when others then return null;
+end $$;
+
 create or replace function voicepilot_safety.safety_enabled(p_org uuid) returns boolean
 language plpgsql security definer set search_path = pg_catalog as $$
 declare g boolean; o boolean;
 begin
   if p_org is null then return false; end if;
+  -- Shared transaction locks make the final safety check atomic with respect to
+  -- global and organization stop changes until the caller transaction ends.
+  perform pg_advisory_xact_lock_shared(hashtextextended('voicepilot:global-stop',0));
+  perform pg_advisory_xact_lock_shared(hashtextextended('voicepilot:organization-stop:' || p_org::text,0));
   select emergency_stop into g from voicepilot_safety.provider_global_stop where singleton = true for share;
   select emergency_stop into o from public.provider_safety_controls where organization_id = p_org for share;
   return g is false and o is false;
@@ -83,9 +97,10 @@ end $$;
 create or replace function voicepilot_safety.set_global_stop(p_stop boolean, p_actor uuid) returns boolean
 language plpgsql security definer set search_path = pg_catalog as $$
 begin
-  if p_stop is null or p_actor is null or not exists(
+  if p_stop is null or p_actor is null or voicepilot_safety.current_actor() is distinct from p_actor or not exists(
     select 1 from voicepilot_safety.provider_global_operators where actor_id=p_actor and enabled=true
   ) then return false; end if;
+  perform pg_advisory_xact_lock(hashtextextended('voicepilot:global-stop',0));
   insert into voicepilot_safety.provider_global_stop(singleton, emergency_stop) values(true,p_stop)
     on conflict(singleton) do update set emergency_stop=excluded.emergency_stop,updated_at=clock_timestamp();
   insert into voicepilot_safety.provider_safety_audit(action,actor_id,detail) values('global_stop',p_actor,jsonb_build_object('enabled',p_stop));
@@ -95,9 +110,10 @@ end $$;
 create or replace function voicepilot_safety.set_organization_stop(p_org uuid, p_stop boolean, p_actor uuid) returns boolean
 language plpgsql security definer set search_path = pg_catalog as $$
 begin
-  if p_org is null or p_stop is null or p_actor is null or not exists(
+  if p_org is null or p_stop is null or p_actor is null or voicepilot_safety.current_actor() is distinct from p_actor or not exists(
     select 1 from public.organization_members where organization_id=p_org and user_id=p_actor and role in ('owner','admin')
   ) then return false; end if;
+  perform pg_advisory_xact_lock(hashtextextended('voicepilot:organization-stop:' || p_org::text,0));
   insert into public.provider_safety_controls(organization_id,emergency_stop,updated_by)
     values(p_org,p_stop,p_actor) on conflict(organization_id) do update
     set emergency_stop=excluded.emergency_stop,updated_by=excluded.updated_by,updated_at=clock_timestamp();
@@ -139,7 +155,7 @@ language plpgsql security definer set search_path = pg_catalog as $$
 begin
   if p_org is null or p_provider is null or length(trim(p_provider)) not between 1 and 80
     or p_max is null or p_max not between 1 and 100000 or p_rate is null or p_rate not between 1 and 100000
-    or p_actor is null or not exists(select 1 from public.organization_members
+    or p_actor is null or voicepilot_safety.current_actor() is distinct from p_actor or not exists(select 1 from public.organization_members
       where organization_id=p_org and user_id=p_actor and role in ('owner','admin')) then return false; end if;
   insert into voicepilot_safety.provider_limits(organization_id,provider,max_concurrent,max_per_minute)
     values(p_org,p_provider,p_max,p_rate) on conflict(organization_id,provider) do update
@@ -229,7 +245,8 @@ create or replace function voicepilot_safety.set_budget(p_org uuid,p_budget bigi
 language plpgsql security definer set search_path = pg_catalog as $$
 declare prior voicepilot_safety.provider_usage_accounts%rowtype;
 begin
-  if p_org is null or p_actor is null or p_budget is null or p_budget not between 0 and 9007199254740991 or not exists(
+  if p_org is null or p_actor is null or voicepilot_safety.current_actor() is distinct from p_actor
+    or p_budget is null or p_budget not between 0 and 9007199254740991 or not exists(
     select 1 from public.organization_members where organization_id=p_org and user_id=p_actor and role in ('owner','admin')
   ) then return false; end if;
   perform pg_advisory_xact_lock(hashtextextended('budget:' || p_org::text,0));

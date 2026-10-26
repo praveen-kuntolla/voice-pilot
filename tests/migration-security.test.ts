@@ -250,3 +250,40 @@ describe("migration 011 agent approval audit repair", () => {
     expect(sql011).not.toMatch(/grant execute on function public\.audit_provider_governance/i);
   });
 });
+
+// ── Migrations 012–013 (review-only) ─────────────────────────────────────────
+const sql012 = readFileSync(
+  path.join(process.cwd(), "supabase/migrations/202610220012_durable_safety_foundations.sql"),
+  "utf8",
+);
+const sql013 = readFileSync(
+  path.join(process.cwd(), "supabase/migrations/202610220013_transactional_safety.sql"),
+  "utf8",
+);
+
+describe("review-only transactional safety migrations", () => {
+  it("keeps all durable tables protected by RLS and without client policies", () => {
+    for (const table of ["provider_replay_claims", "provider_safety_controls", "provider_action_reservations", "provider_usage_ledger"]) {
+      expect(sql012).toContain(`alter table public.${table} enable row level security`);
+      expect(sql012).not.toMatch(new RegExp(`create policy .* on public\\.${table}`, "i"));
+    }
+  });
+
+  it("binds privileged actor claims to the trusted request context", () => {
+    expect(sql013).toContain("current_setting('request.jwt.claim.sub',true)");
+    expect(sql013.match(/current_actor\(\) is distinct from p_actor/g)).toHaveLength(4);
+  });
+
+  it("serializes global and organization stop updates against safety checks", () => {
+    expect(sql013).toContain("pg_advisory_xact_lock_shared(hashtextextended('voicepilot:global-stop',0))");
+    expect(sql013).toContain("pg_advisory_xact_lock(hashtextextended('voicepilot:global-stop',0))");
+    expect(sql013).toContain("pg_advisory_xact_lock_shared(hashtextextended('voicepilot:organization-stop:' || p_org::text,0))");
+    expect(sql013).toContain("pg_advisory_xact_lock(hashtextextended('voicepilot:organization-stop:' || p_org::text,0))");
+  });
+
+  it("keeps privileged routines off PUBLIC and client roles with a fixed search path", () => {
+    expect(sql013).toContain("revoke all on all functions in schema voicepilot_safety from public, anon, authenticated");
+    expect(sql013).toContain("set search_path = pg_catalog");
+    expect(sql013).not.toMatch(/grant execute on all functions in schema voicepilot_safety to (public|anon|authenticated)/i);
+  });
+});
