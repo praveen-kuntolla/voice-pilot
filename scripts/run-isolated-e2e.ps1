@@ -1,4 +1,4 @@
-param([switch]$KeepServer, [switch]$FocusedLogin)
+param([switch]$KeepServer, [ValidateSet('all','login','voice')][string]$TestSelection = 'all', [ValidateSet('dev','production')][string]$Runtime = 'production')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $metadata = Join-Path $repo '.local\voicepilot-local-loopback-fixtures.json'
@@ -13,24 +13,39 @@ function Get-DescendantProcessIds([int]$rootId) {
   return $ids
 }
 function Test-IsolatedServerOwner([int]$listenerPid, [int]$rootId) {
-  if ((Get-DescendantProcessIds $rootId) -contains $listenerPid) { return $true }
-  $process = Get-CimInstance Win32_Process -Filter "ProcessId=$listenerPid"
-  if ($null -ne $process -and [string]$process.CommandLine -match 'start-isolated-auth-dev\.mjs|next(\.js)?\s+dev' -and [string]$process.CommandLine -match [regex]::Escape($repo)) { return $true }
-  if ($null -ne $process -and [string]$process.CommandLine -match 'next[\\/]dist[\\/]bin[\\/]next.*dev.*--hostname\s+127\.0\.0\.1.*--port\s+3001') { return $true }
-  if ($null -ne $process -and [string]$process.CommandLine -match 'next[\\/]dist[\\/]server[\\/]lib[\\/]start-server\.js') {
-    $ancestor = $process
-    while ($null -ne $ancestor -and [int]$ancestor.ParentProcessId -gt 0) {
-      $ancestor = Get-CimInstance Win32_Process -Filter "ProcessId=$($ancestor.ParentProcessId)"
-      if ($null -ne $ancestor -and [string]$ancestor.CommandLine -match 'start-isolated-auth-dev\.mjs') { return $true }
-    }
-  }
-  $current = $process
-  while ($null -ne $current -and [int]$current.ParentProcessId -gt 0) {
-    if ([int]$current.ParentProcessId -eq $rootId) { return $true }
-    $current = Get-CimInstance Win32_Process -Filter "ProcessId=$($current.ParentProcessId)"
-  }
-  return $false
+  return (Get-DescendantProcessIds $rootId) -contains $listenerPid
 }
+Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Runtime.InteropServices;
+public static class VoicePilotTcpOwnerTable {
+  [DllImport("iphlpapi.dll", SetLastError = true)]
+  static extern uint GetExtendedTcpTable(IntPtr table, ref int size, bool ordered, int family, int tableClass, uint reserved);
+  public static string[] ListLoopbackListeners(int port) {
+    int size = 0;
+    GetExtendedTcpTable(IntPtr.Zero, ref size, true, 2, 3, 0); // IPv4, TCP_TABLE_OWNER_PID_LISTENER
+    if (size <= 0) return Array.Empty<string>();
+    IntPtr buffer = Marshal.AllocHGlobal(size);
+    try {
+      if (GetExtendedTcpTable(buffer, ref size, true, 2, 3, 0) != 0) return Array.Empty<string>();
+      var results = new List<string>();
+      int count = Marshal.ReadInt32(buffer);
+      for (int i = 0; i < count; i++) {
+        int row = 4 + i * 24; // MIB_TCPROW_OWNER_PID: six DWORDs
+        int address = Marshal.ReadInt32(buffer, row + 4);
+        int rawPort = Marshal.ReadInt32(buffer, row + 8);
+        int localPort = ((rawPort & 255) << 8) | ((rawPort >> 8) & 255);
+        if (localPort == port && new IPAddress(BitConverter.GetBytes(address)).ToString() == "127.0.0.1") {
+          results.Add(Marshal.ReadInt32(buffer, row + 20).ToString());
+        }
+      }
+      return results.ToArray();
+    } finally { Marshal.FreeHGlobal(buffer); }
+  }
+}
+'@
 function Get-ListeningSockets {
   $sockets = [System.Collections.Generic.List[object]]::new()
   try {
@@ -46,6 +61,11 @@ function Get-ListeningSockets {
         }
       }
     } catch {}
+  }
+  if ($sockets.Count -eq 0) {
+    foreach ($listenerPid in [VoicePilotTcpOwnerTable]::ListLoopbackListeners(3001)) {
+      $sockets.Add([pscustomobject]@{ Address = '127.0.0.1'; Port = 3001; OwningProcess = [int]$listenerPid; Method = 'GetExtendedTcpTable' })
+    }
   }
   return $sockets
 }
@@ -69,8 +89,12 @@ try {
   $env:E2E_EMAIL_B = [string]$fixture.users[1].email; $env:E2E_PASSWORD_B = [string]$fixture.users[1].password
   $env:E2E_EMAIL_C = [string]$fixture.users[2].email; $env:E2E_PASSWORD_C = [string]$fixture.users[2].password
   $env:PORT = '3001'; $env:PLAYWRIGHT_BASE_URL = 'http://127.0.0.1:3001'; $env:PLAYWRIGHT_REUSE_EXISTING_SERVER = 'true'
+  if ($Runtime -eq 'production') {
+    & node scripts/start-isolated-auth-dev.mjs build | Out-Null
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path '.next-e2e/BUILD_ID')) { throw 'The isolated local production build failed.' }
+  }
   Remove-Item $serverLog,$serverErrorLog -Force -ErrorAction SilentlyContinue
-  $server = Start-Process -FilePath 'node' -ArgumentList 'scripts/start-isolated-auth-dev.mjs' -WorkingDirectory $repo -PassThru -WindowStyle Hidden -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog
+  $server = Start-Process -FilePath 'node' -ArgumentList @('scripts/start-isolated-auth-dev.mjs', $(if ($Runtime -eq 'production') { 'start' } else { 'dev' })) -WorkingDirectory $repo -PassThru -WindowStyle Hidden -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog
   $ready = $false
   for ($i = 0; $i -lt 60; $i++) {
     try { $health = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/api/health' -UseBasicParsing; foreach ($listener in @(Get-ListeningSockets)) { if ($health.StatusCode -eq 200 -and (Test-IsolatedServerOwner ([int]$listener.OwningProcess) $server.Id)) { $ready = $true; break } }; if ($ready) { break } } catch {}
@@ -80,7 +104,9 @@ try {
   if (-not $ready) { $diagnosticSockets = @(Get-ListeningSockets | ForEach-Object { "$($_.Method):$($_.Address):$($_.Port):PID=$($_.OwningProcess)" }); throw "The isolated Next.js server did not become ready. Listener diagnostics: $($diagnosticSockets -join '; ') Root PID: $($server.Id)." }
   $login = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/login' -UseBasicParsing
   if ($login.StatusCode -ne 200 -or $login.Content -notmatch 'Log in to your workspace') { throw 'The isolated login page did not compile correctly. See local isolated server logs.' }
-  if ($FocusedLogin) { & npx playwright test tests/e2e/isolated-auth-flow.spec.ts --grep "persists a session" --workers=1 } else { & npx playwright test --workers=1 }
+  if ($TestSelection -eq 'login') { & npx playwright test tests/e2e/isolated-auth-flow.spec.ts --grep "persists a session" --workers=1 }
+  elseif ($TestSelection -eq 'voice') { & npx playwright test tests/e2e/public-smoke.spec.ts --grep "local voice simulator is opt-in" --workers=1 }
+  else { & npx playwright test --workers=1 }
   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
   Remove-Item Env:E2E_ISOLATED_AUTH,Env:E2E_EMAIL_A,Env:E2E_PASSWORD_A,Env:E2E_EMAIL_B,Env:E2E_PASSWORD_B,Env:E2E_EMAIL_C,Env:E2E_PASSWORD_C,Env:PLAYWRIGHT_BASE_URL,Env:PLAYWRIGHT_REUSE_EXISTING_SERVER,Env:PORT -ErrorAction SilentlyContinue

@@ -1,5 +1,6 @@
 import {test,expect} from "@playwright/test";
-async function login(page:any,email:string,password:string){await page.goto("/login");await page.getByLabel("Email").fill(email);await page.getByLabel("Password").fill(password);await page.getByRole("button",{name:/log in/i}).click();}
+import {waitForLoginHydration} from "./login-readiness";
+async function login(page:any,email:string,password:string){await waitForLoginHydration(page);await page.getByLabel("Email").fill(email);await page.getByLabel("Password").fill(password);await page.getByRole("button",{name:/log in/i}).click();}
 test("public marketing and auth entry points render",async({page})=>{await page.goto("/");await expect(page).toHaveTitle(/VoicePilot/i);await page.goto("/login");await expect(page.getByRole("heading",{name:/log in/i})).toBeVisible();await page.goto("/signup");await expect(page.getByRole("heading",{name:/create your account/i})).toBeVisible();});
 test("protected routes redirect unauthenticated users",async({page})=>{await page.goto("/dashboard");await expect(page).toHaveURL(/\/login/);await page.goto("/dashboard/agents");await expect(page).toHaveURL(/\/login/);});
 test("protected Phase 2 routes redirect unauthenticated users",async({page})=>{for(const path of ["/dashboard/contacts","/dashboard/campaigns"]){await page.goto(path);await expect(page).toHaveURL(/\/login/)}});

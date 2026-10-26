@@ -10,6 +10,17 @@ const limits: SafetyLimits = { maxConcurrent: 2, currentConcurrent: 0, maxAttemp
 const hours = { timeZone: "UTC", startHour: 0, endHour: 24, at: Date.UTC(2026, 0, 1, 12) };
 
 describe("offline provider foundations", () => {
+  it("rejects expired replay claims and permits reuse only at or after expiry", () => {
+    const store = new MemoryReplayStore();
+    expect(store.claim("org-a/mock/e", 100, 99)).toBe(true);
+    expect(store.claim("org-a/mock/e", 200, 99)).toBe(false);
+    expect(store.claim("org-a/mock/e", 200, 100)).toBe(true);
+    expect(store.claim("org-a/mock/e", 200, 101)).toBe(false);
+    expect(store.claim("org-b/mock/e", 200, 101)).toBe(true);
+    expect(store.claim("org-a/other/e", 200, 101)).toBe(true);
+    expect(store.claim("new", 100, 100)).toBe(false);
+    expect(store.claim("new", 100, 101)).toBe(false);
+  });
   it("emits deterministic lifecycle events for every offline adapter", async () => { for (const provider of Object.values(offlineProviderSet())) { const result = await provider.run(context, "hello"); expect(result.ok).toBe(true); if (result.ok) expect(result.events.map((event) => event.kind)).toEqual(["started", "progress", "completed"]); expect(provider.cancel(context).kind).toBe("cancelled"); } });
   it("uses unambiguous tenant-bound webhook identity and rejects replay or tampering", () => { const replay = new MemoryReplayStore(); const input = { organizationId: "org.a", provider: "mock.provider", eventId: "evt.1", timestamp: 1_700_000_000_000, body: '{"ok":true}' }; const signature = signWebhook("test-secret", input); expect(verifyWebhook({ ...input, signature }, "test-secret", replay, input.timestamp).ok).toBe(true); expect(verifyWebhook({ ...input, signature }, "test-secret", replay, input.timestamp).ok).toBe(false); expect(verifyWebhook({ ...input, signature, body: "changed" }, "test-secret", new MemoryReplayStore(), input.timestamp).ok).toBe(false); expect(verifyWebhook({ ...input, signature, organizationId: "org.b" }, "test-secret", new MemoryReplayStore(), input.timestamp).ok).toBe(false); expect(verifyWebhook({ ...input, signature: "abc" }, "test-secret", new MemoryReplayStore(), input.timestamp).ok).toBe(false); });
   it("rejects malformed tolerance and expired or future timestamps", () => { const input = { organizationId: "org", provider: "mock", eventId: "evt", timestamp: 1_000_000, body: "{}" }; const signature = signWebhook("secret", input); const replay = new MemoryReplayStore(); expect(verifyWebhook({ ...input, signature }, "secret", replay, input.timestamp, Number.NaN).ok).toBe(false); expect(verifyWebhook({ ...input, signature }, "secret", new MemoryReplayStore(), input.timestamp + 301_000).ok).toBe(false); expect(verifyWebhook({ ...input, signature }, "secret", new MemoryReplayStore(), input.timestamp - 301_000).ok).toBe(false); });
