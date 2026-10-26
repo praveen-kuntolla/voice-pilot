@@ -11,6 +11,7 @@ export function readinessIndicators(telephony: TelephonyReadiness = "disabled"):
     { name: "AI providers", status: "disabled", detail: "External STT, LLM and TTS providers are disabled; webhook infrastructure is unverified." },
     { name: "Durable safety controls", status: "unverified", detail: "Transactional replay, reservations, emergency stop and usage-ledger design is review-only; production storage is not active." },
     { name: "Offline safety tests", status: "contract-tested", detail: "Deterministic replay, concurrency, budget and tenant-bound control behavior is locally tested." },
+    { name: "Local PostgreSQL safety", status: "contract-tested", detail: "Transactional safety routines have disposable-local PostgreSQL tests; migrations 012–013 are review-only and no production controls are deployed." },
   ];
 }
 
