@@ -21,6 +21,7 @@ Webhook verification is a generic offline HMAC fixture contract, not Twilio, Tel
 - Replay claims, reservations, emergency-stop state and usage accounting require transactional RPCs, durable retention/cleanup, distributed rate limits, metrics and failure drills before provider connectivity.
 - The offline organization stop and offline global stop are separate contracts. Both must be available and false before a simulated reservation or usage event can proceed. Neither is an authoritative production switch.
 - Migration 012 is review-only. Its replay primary key cannot reclaim an expired event through a plain insert; a future transaction must lock or atomically replace expired rows, reject live duplicates, and clean up expired claims. No such RPC is active. A rollback requires first confirming that no client or worker depends on the new tables, then archiving any synthetic local rows before dropping those tables in reverse dependency order; do not run that rollback against a production database.
+- Migration 013 adds review-only transactional routines and a dedicated non-exposed `voicepilot_safety` schema. A disposable-local PostgreSQL harness tests replay/concurrency/budget races and permission boundaries; the established local and remote migration ledgers remain at 011. See [transactional safety](transactional-safety.md) for design, limitations and rollback. No production control is deployed.
 
 ## First approved connectivity test
 
