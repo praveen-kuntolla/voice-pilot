@@ -12,6 +12,7 @@ export function readinessIndicators(telephony: TelephonyReadiness = "disabled"):
     { name: "Durable safety controls", status: "unverified", detail: "Transactional replay, reservations, emergency stop and usage-ledger design is review-only; production storage is not active." },
     { name: "Offline safety tests", status: "contract-tested", detail: "Deterministic replay, concurrency, budget and tenant-bound control behavior is locally tested." },
     { name: "Local PostgreSQL safety", status: "contract-tested", detail: "Transactional safety routines have disposable-local PostgreSQL tests; migrations 012–013 are review-only and no production controls are deployed." },
+    { name: "Trusted authorization gateway", status: "contract-tested", detail: "Server identity, tenant membership and transaction-scoped request context are offline-tested; no production privileged connection is active." },
   ];
 }
 

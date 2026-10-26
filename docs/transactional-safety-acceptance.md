@@ -52,7 +52,7 @@ Sanitized execution record, 2026-10-26:
 
 ## Production blockers and operating requirements
 
-1. **High:** implement and audit the trusted server gateway that derives actor/tenant context, isolates the service credential and performs fresh consent, opt-out, calling-hours and provider-policy checks.
+1. **High:** the trusted server gateway is now offline contract-tested, but production activation still requires independent review, production-grade connection/pool validation, secret isolation and monitored deployment.
 2. **High:** complete human legal/compliance review for consent evidence, calling windows, opt-out, emergency handling, recording/transcription and regional retention.
 3. **Medium:** deploy cleanup scheduling, retention limits, immutable audit export, metrics, alerts, reconciliation and incident procedures.
 4. **Medium:** rehearse backup/restore, migration rollback and emergency-stop operator runbooks in a production-like isolated environment.

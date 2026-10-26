@@ -1,4 +1,4 @@
-param([switch]$KeepServer, [ValidateSet('all','login','voice')][string]$TestSelection = 'all', [ValidateSet('dev','production')][string]$Runtime = 'production')
+param([switch]$KeepServer, [ValidateSet('all','login','voice')][string]$TestSelection = 'all', [ValidateSet('dev','production')][string]$Runtime = 'production', [ValidateRange(1024,65535)][int]$ServerPort = 3001)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $metadata = Join-Path $repo '.local\voicepilot-local-loopback-fixtures.json'
@@ -49,29 +49,29 @@ public static class VoicePilotTcpOwnerTable {
 function Get-ListeningSockets {
   $sockets = [System.Collections.Generic.List[object]]::new()
   try {
-    foreach ($connection in @(Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction Stop | Where-Object { $_.LocalAddress -eq '127.0.0.1' })) {
-      $sockets.Add([pscustomobject]@{ Address = '127.0.0.1'; Port = 3001; OwningProcess = [int]$connection.OwningProcess; Method = 'Get-NetTCPConnection' })
+    foreach ($connection in @(Get-NetTCPConnection -LocalPort $ServerPort -State Listen -ErrorAction Stop | Where-Object { $_.LocalAddress -eq '127.0.0.1' })) {
+      $sockets.Add([pscustomobject]@{ Address = '127.0.0.1'; Port = $ServerPort; OwningProcess = [int]$connection.OwningProcess; Method = 'Get-NetTCPConnection' })
     }
   } catch {}
   if ($sockets.Count -eq 0) {
     try {
       foreach ($line in @(netstat.exe -ano -p tcp 2>$null)) {
-        if ($line -match '^\s*TCP\s+127\.0\.0\.1:3001\s+\S+\s+LISTENING\s+(\d+)\s*$') {
-          $sockets.Add([pscustomobject]@{ Address = '127.0.0.1'; Port = 3001; OwningProcess = [int]$Matches[1]; Method = 'netstat' })
+        if ($line -match "^\s*TCP\s+127\.0\.0\.1:$ServerPort\s+\S+\s+LISTENING\s+(\d+)\s*$") {
+          $sockets.Add([pscustomobject]@{ Address = '127.0.0.1'; Port = $ServerPort; OwningProcess = [int]$Matches[1]; Method = 'netstat' })
         }
       }
     } catch {}
   }
   if ($sockets.Count -eq 0) {
-    foreach ($listenerPid in [VoicePilotTcpOwnerTable]::ListLoopbackListeners(3001)) {
-      $sockets.Add([pscustomobject]@{ Address = '127.0.0.1'; Port = 3001; OwningProcess = [int]$listenerPid; Method = 'GetExtendedTcpTable' })
+    foreach ($listenerPid in [VoicePilotTcpOwnerTable]::ListLoopbackListeners($ServerPort)) {
+      $sockets.Add([pscustomobject]@{ Address = '127.0.0.1'; Port = $ServerPort; OwningProcess = [int]$listenerPid; Method = 'GetExtendedTcpTable' })
     }
   }
   return $sockets
 }
 try {
   $existing = @(Get-ListeningSockets)
-  if ($existing) { throw "Port 3001 is already occupied by PID $($existing[0].OwningProcess); refusing to reuse an unverified server." }
+  if ($existing) { throw "Port $ServerPort is already occupied by PID $($existing[0].OwningProcess); refusing to reuse an unverified server." }
   $compose = docker compose -p voicepilot-local-loopback ps --format json | ConvertFrom-Json
   if (-not $compose) { throw 'The isolated Compose project is not running.' }
   $published = @($compose | Where-Object { $_.Publishers -and $_.Publishers -match '127\.0\.0\.1' })
@@ -88,7 +88,7 @@ try {
   $env:E2E_EMAIL_A = [string]$fixture.users[0].email; $env:E2E_PASSWORD_A = [string]$fixture.users[0].password
   $env:E2E_EMAIL_B = [string]$fixture.users[1].email; $env:E2E_PASSWORD_B = [string]$fixture.users[1].password
   $env:E2E_EMAIL_C = [string]$fixture.users[2].email; $env:E2E_PASSWORD_C = [string]$fixture.users[2].password
-  $env:PORT = '3001'; $env:PLAYWRIGHT_BASE_URL = 'http://127.0.0.1:3001'; $env:PLAYWRIGHT_REUSE_EXISTING_SERVER = 'true'
+  $env:PORT = [string]$ServerPort; $env:PLAYWRIGHT_BASE_URL = "http://127.0.0.1:$ServerPort"; $env:PLAYWRIGHT_REUSE_EXISTING_SERVER = 'true'
   if ($Runtime -eq 'production') {
     & node scripts/start-isolated-auth-dev.mjs build | Out-Null
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path '.next-e2e/BUILD_ID')) { throw 'The isolated local production build failed.' }
@@ -97,12 +97,12 @@ try {
   $server = Start-Process -FilePath 'node' -ArgumentList @('scripts/start-isolated-auth-dev.mjs', $(if ($Runtime -eq 'production') { 'start' } else { 'dev' })) -WorkingDirectory $repo -PassThru -WindowStyle Hidden -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog
   $ready = $false
   for ($i = 0; $i -lt 60; $i++) {
-    try { $health = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/api/health' -UseBasicParsing; foreach ($listener in @(Get-ListeningSockets)) { if ($health.StatusCode -eq 200 -and (Test-IsolatedServerOwner ([int]$listener.OwningProcess) $server.Id)) { $ready = $true; break } }; if ($ready) { break } } catch {}
+    try { $health = Invoke-WebRequest -Uri "http://127.0.0.1:$ServerPort/api/health" -UseBasicParsing; foreach ($listener in @(Get-ListeningSockets)) { if ($health.StatusCode -eq 200 -and (Test-IsolatedServerOwner ([int]$listener.OwningProcess) $server.Id)) { $ready = $true; break } }; if ($ready) { break } } catch {}
     if ($server.HasExited) { throw "Isolated Next.js server exited before readiness. See local isolated server logs." }
     Start-Sleep -Milliseconds 500
   }
   if (-not $ready) { $diagnosticSockets = @(Get-ListeningSockets | ForEach-Object { "$($_.Method):$($_.Address):$($_.Port):PID=$($_.OwningProcess)" }); throw "The isolated Next.js server did not become ready. Listener diagnostics: $($diagnosticSockets -join '; ') Root PID: $($server.Id)." }
-  $login = Invoke-WebRequest -Uri 'http://127.0.0.1:3001/login' -UseBasicParsing
+  $login = Invoke-WebRequest -Uri "http://127.0.0.1:$ServerPort/login" -UseBasicParsing
   if ($login.StatusCode -ne 200 -or $login.Content -notmatch 'Log in to your workspace') { throw 'The isolated login page did not compile correctly. See local isolated server logs.' }
   if ($TestSelection -eq 'login') { & npx playwright test tests/e2e/isolated-auth-flow.spec.ts --grep "persists a session" --workers=1 }
   elseif ($TestSelection -eq 'voice') { & npx playwright test tests/e2e/public-smoke.spec.ts --grep "local voice simulator is opt-in" --workers=1 }
