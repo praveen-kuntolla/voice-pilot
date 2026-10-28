@@ -3,6 +3,7 @@ import { prepareOfflineProviderAction, type SafetyTransactionExecutor } from "@/
 import type { SafetyQuery } from "@/lib/postgres-durable-safety";
 import type { AuthoritativePolicyContext, PolicyContextRepository } from "@/lib/policy-enforcement-gateway";
 import type { TrustedIdentitySource } from "@/lib/trusted-authorization";
+import { MemoryGatewayEventSink } from "@/lib/gateway-observability";
 
 const actor = "11111111-1111-4111-8111-111111111111";
 const org = "22222222-2222-4222-8222-222222222222";
@@ -32,6 +33,7 @@ function harness(overrides: Partial<AuthoritativePolicyContext> = {}, options: {
     if (sql.includes("provider_global_stop") || sql.includes("provider_safety_controls")) return { rows: [{ emergency_stop: false }] };
     if (sql.includes("claim_replay")) return { rows: [{ result: options.replay ?? true }] };
     if (sql.includes("reserve_action")) return { rows: [{ result: { ok: true, reservationId: "33333333-3333-4333-8333-333333333333", reused: false } }] };
+    if (sql.includes("reserve_usage")) return { rows: [{ result: { ok: true, reused: false } }] };
     if (sql.includes("record_usage")) return { rows: [{ result: { ok: true, recorded: true, totalCents: 10 } }] };
     return { rows: [{}] };
   }) as unknown as SafetyQuery;
@@ -73,11 +75,20 @@ describe("privileged provider-action composition", () => {
     expect(duplicate.calls.some((sql) => sql.includes("reserve_action"))).toBe(false);
   });
 
+  it("emits sanitized denial telemetry without request secrets", async () => {
+    const duplicate = harness({}, { replay: false }); const observer = new MemoryGatewayEventSink();
+    await prepareOfflineProviderAction({ ...duplicate.deps, observer, correlationId: "corr-safe" }, { ...input, idempotencyKey: "private-key" });
+    expect(observer.events).toEqual([expect.objectContaining({ type: "duplicate_idempotency", correlationId: "corr-safe" })]);
+    expect(JSON.stringify(observer.events)).not.toContain("private-key");
+  });
+
   it("uses trusted time and authoritative limits for offline preparation without dispatching an external job", async () => {
     const { calls, deps } = harness();
     const result = await prepareOfflineProviderAction(deps, input);
     expect(result).toMatchObject({ status: "success", value: { prepared: true, simulationOnly: true } });
     expect(calls.some((sql) => sql.includes("reserve_action"))).toBe(true);
+    expect(calls.some((sql) => sql.includes("reserve_usage"))).toBe(true);
+    expect(calls.findIndex((sql) => sql.includes("set_config('request.jwt.claim.sub'"))).toBeLessThan(calls.findIndex((sql) => sql.includes("provider_global_stop")));
     expect(calls.every((sql) => !/livekit|twilio|telnyx|http/i.test(sql))).toBe(true);
   });
 

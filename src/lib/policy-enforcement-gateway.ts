@@ -31,11 +31,14 @@ export async function authorizeProviderAction(deps: {
   safety: DurableSafetyStore;
   now: () => number;
   idempotencyTtlMs?: number;
+  bindVerifiedContext?: (identity: { actorId: string; organizationId: string }) => Promise<void>;
 }, input: { organizationId: string; campaignId: string; agentId: string; contactId: string; idempotencyKey: string; claimedActorId?: string }): Promise<PolicyDecision> {
   const now = deps.now();
   if (!Number.isSafeInteger(now) || now < 0 || !required(input.idempotencyKey)) return { ok: false, category: "denied", reason: "invalid_request" };
   const auth = await authorizeTrustedActor(deps.identity, { organizationId: input.organizationId, operation: "execute_privileged", claimedActorId: input.claimedActorId }, now);
   if (!auth.ok) return { ok: false, category: "denied", reason: auth.reason };
+  try { await deps.bindVerifiedContext?.({ actorId: auth.actorId, organizationId: auth.organizationId }); }
+  catch { return { ok: false, category: "unavailable", reason: "request_context_unavailable" }; }
   let context: AuthoritativePolicyContext | null;
   try { context = await deps.repository.load(input); }
   catch { return { ok: false, category: "unavailable", reason: "policy_context_unavailable" }; }

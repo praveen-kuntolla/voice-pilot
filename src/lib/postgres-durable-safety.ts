@@ -63,4 +63,14 @@ export class PostgresDurableSafetyStore implements DurableSafetyStore {
       return result?.ok === true && cents(result.totalCents) ? result : { ok: false, error: result?.ok === false && result.error === "budget_exceeded" ? "budget_exceeded" : "unavailable" };
     } catch { return { ok: false, error: "unavailable" }; }
   }
+
+  async reserveUsage(request: UsageRequest & { expiresAt: number }, now: number): Promise<{ ok: true; reused: boolean } | { ok: false; error: "invalid" | "budget_exceeded" | "unavailable" }> {
+    if (!uuid(request.organizationId) || !text(request.idempotencyKey) || !cents(request.amountCents) || !cents(request.budgetCents) || !instant(now) || !instant(request.expiresAt) || request.expiresAt <= now) return { ok: false, error: "invalid" };
+    try {
+      const row = await this.one<{ result: { ok: boolean; reused?: boolean; error?: string } }>("select voicepilot_safety.reserve_usage($1::uuid,$2::text,$3::bigint,$4::bigint,$5::timestamptz) as result", [request.organizationId, request.idempotencyKey, request.amountCents, request.budgetCents, new Date(request.expiresAt).toISOString()]);
+      const result = row?.result;
+      if (result?.ok === true && typeof result.reused === "boolean") return { ok: true, reused: result.reused };
+      return { ok: false, error: result?.error === "budget_exceeded" ? "budget_exceeded" : "unavailable" };
+    } catch { return { ok: false, error: "unavailable" }; }
+  }
 }

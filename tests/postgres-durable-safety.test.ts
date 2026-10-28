@@ -21,6 +21,7 @@ describe("server-only PostgreSQL safety adapter", () => {
     expect(await store.getGlobalControl()).toBeUndefined();
     expect(await store.reserve(request, 1)).toEqual({ ok: false, error: "unavailable" });
     expect(await store.recordUsage({ organizationId: org, idempotencyKey: "u", amountCents: 1, budgetCents: 2 }, 1)).toEqual({ ok: false, error: "unavailable" });
+    expect(await store.reserveUsage({ organizationId: org, idempotencyKey: "u", amountCents: 1, budgetCents: 2, expiresAt: 4_000 }, 1)).toEqual({ ok: false, error: "unavailable" });
   });
   it("returns explicit true and false control values and treats absent rows as unavailable", async () => {
     const query = vi.fn()

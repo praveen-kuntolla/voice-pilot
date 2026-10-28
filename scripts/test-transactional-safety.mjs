@@ -89,7 +89,7 @@ try {
   expect(psql(testDb, "select voicepilot_safety.cleanup_replay(clock_timestamp(),100)"), "1", "cleanup succeeds on bounded retry");
   expect(psql(testDb, `select voicepilot_safety.claim_rate('${orgA}','mock',1); select voicepilot_safety.claim_rate('${orgA}','mock',1); select voicepilot_safety.claim_rate('${orgB}','mock',1)`), "t\nf\nt", "tenant-bound rate window");
   psql(testDb, `insert into voicepilot_safety.provider_rate_windows values('${orgA}','mock','2000-01-01',1)`);
-  expect(psql(testDb, "select voicepilot_safety.cleanup_rate_windows(date_trunc('minute',clock_timestamp()),100)"), "1", "old rate bucket cleanup");
+  expect(psql(testDb, "select voicepilot_safety.cleanup_rate_windows(date_trunc('minute',clock_timestamp())-interval '1 minute',100)"), "1", "old rate bucket cleanup");
   results = await Promise.allSettled([
     streamSql(testDb, `select voicepilot_safety.reserve_action('${orgA}','mock','a',1,'${expires}')`),
     streamSql(testDb, `select voicepilot_safety.reserve_action('${orgA}','mock','b',1,'${expires}')`),
