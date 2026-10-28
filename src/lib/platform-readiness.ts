@@ -13,6 +13,7 @@ export function readinessIndicators(telephony: TelephonyReadiness = "disabled"):
     { name: "Offline safety tests", status: "contract-tested", detail: "Deterministic replay, concurrency, budget and tenant-bound control behavior is locally tested." },
     { name: "Local PostgreSQL safety", status: "contract-tested", detail: "Transactional safety routines have disposable-local PostgreSQL tests; migrations 012–013 are review-only and no production controls are deployed." },
     { name: "Trusted authorization gateway", status: "contract-tested", detail: "Server identity, tenant membership and transaction-scoped request context are offline-tested; no production privileged connection is active." },
+    { name: "Offline production gateway", status: "contract-tested", detail: "The PostgreSQL pool, authoritative policy repository and atomic safety composition are disposable-local tested only; no live provider dispatch exists." },
   ];
 }
 
