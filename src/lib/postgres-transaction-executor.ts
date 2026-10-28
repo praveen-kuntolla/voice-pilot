@@ -17,6 +17,8 @@ export class PostgresTransactionExecutor implements SafetyTransactionExecutor {
     if (!Number.isSafeInteger(this.options.statementTimeoutMs) || this.options.statementTimeoutMs < 1 || this.options.statementTimeoutMs > 120_000) throw new Error("gateway_unavailable");
     let client: Pick<PoolClient, "query" | "release"> | undefined;
     let began = false;
+    let commitAttempted = false;
+    let discardError: Error | undefined;
     try {
       client = await this.pool.connect();
       await client.query("begin"); began = true;
@@ -27,17 +29,26 @@ export class PostgresTransactionExecutor implements SafetyTransactionExecutor {
         return { rows: result.rows };
       };
       const value = await work(query);
+      commitAttempted = true;
       await client.query("commit"); began = false;
       return value;
     } catch (error) {
       if (client && began) {
-        try { await client.query("rollback"); began = false; this.emit("transaction_rolled_back", correlationId, now()); }
-        catch { this.emit("transaction_failed", correlationId, now()); }
+        try {
+          await client.query("rollback"); began = false; this.emit("transaction_rolled_back", correlationId, now());
+          if (commitAttempted) discardError = new Error("discard_uncertain_connection");
+        } catch {
+          discardError = new Error("discard_unsafe_connection");
+          this.emit("transaction_failed", correlationId, now());
+        }
+      } else if (client) {
+        discardError = new Error("discard_uncertain_connection");
+        this.emit("transaction_failed", correlationId, now());
       } else this.emit("pool_failed", correlationId, now());
       if (error instanceof GatewayTransactionAbort) throw error;
       throw new Error("gateway_unavailable");
     } finally {
-      client?.release();
+      client?.release(discardError);
     }
   }
 
