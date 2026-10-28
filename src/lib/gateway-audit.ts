@@ -1,0 +1,10 @@
+import{createGatewayEvent,type GatewayEventSink,type GatewayEventType,type GatewaySecurityEvent}from"@/lib/gateway-observability";
+import type{SafetyQuery}from"@/lib/postgres-durable-safety";
+if(typeof window!=="undefined")throw new Error("Gateway audit is server-only");
+export class PostgresGatewayEventSink implements GatewayEventSink{
+  constructor(private readonly query:SafetyQuery,private readonly safetyCritical=true){}
+  async emit(input:GatewaySecurityEvent){const event=createGatewayEvent(input);if(!event)throw new Error("invalid_gateway_event");try{const row=(await this.query<{result:boolean}>("select voicepilot_safety.record_gateway_event($1::uuid,$2::text,$3::text,$4::text,$5::timestamptz) result",[event.organizationId??null,event.correlationId,event.type,event.reason,new Date(event.occurredAt).toISOString()])).rows[0];if(row?.result!==true)throw new Error("audit_rejected");}catch{if(this.safetyCritical)throw new Error("safety_audit_unavailable");}}
+}
+export type SyntheticAlert={key:string;severity:"warning"|"critical";type:GatewayEventType;organizationId?:string;reason:string};
+const critical=new Set<GatewayEventType>(["emergency_stop_rejected","pool_failed","transaction_failed","unsafe_pool_discard","credential_rotation_failed"]);
+export function evaluateSyntheticAlerts(events:readonly GatewaySecurityEvent[],suppressionWindowMs:number):SyntheticAlert[]{if(!Number.isSafeInteger(suppressionWindowMs)||suppressionWindowMs<0)throw new Error("invalid_suppression_window");const latest=new Map<string,number>(),alerts:SyntheticAlert[]=[];for(const event of [...events].sort((a,b)=>a.occurredAt-b.occurredAt)){const safe=createGatewayEvent(event);if(!safe)continue;const key=JSON.stringify([safe.organizationId??"global",safe.type,safe.reason]);const prior=latest.get(key);if(prior!==undefined&&safe.occurredAt-prior<suppressionWindowMs)continue;latest.set(key,safe.occurredAt);alerts.push({key,severity:critical.has(safe.type)?"critical":"warning",type:safe.type,reason:safe.reason,...(safe.organizationId?{organizationId:safe.organizationId}:{})});}return alerts;}

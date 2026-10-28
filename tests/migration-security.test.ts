@@ -260,6 +260,7 @@ const sql013 = readFileSync(
   path.join(process.cwd(), "supabase/migrations/202610220013_transactional_safety.sql"),
   "utf8",
 );
+const sql015 = readFileSync(path.join(process.cwd(),"supabase/migrations/202610220015_operational_safety.sql"),"utf8").toLowerCase();
 
 describe("review-only transactional safety migrations", () => {
   it("keeps all durable tables protected by RLS and without client policies", () => {
@@ -286,4 +287,9 @@ describe("review-only transactional safety migrations", () => {
     expect(sql013).toContain("set search_path = pg_catalog");
     expect(sql013).not.toMatch(/grant execute on all functions in schema voicepilot_safety to (public|anon|authenticated)/i);
   });
+});
+
+describe("review-only operational safety migration",()=>{
+  it("keeps retry and audit objects private and service-routine only",()=>{expect(sql015).toContain("revoke all on voicepilot_safety.provider_retry_attempts from public,anon,authenticated");expect(sql015).toContain("revoke all on voicepilot_safety.gateway_audit_events from public,anon,authenticated");expect(sql015).toContain("revoke all on all functions in schema voicepilot_safety from public,anon,authenticated");expect(sql015).not.toMatch(/grant execute on all functions in schema voicepilot_safety to (public|anon|authenticated)/);});
+  it("uses bounded skip-locked reconciliation and immutable audit rows",()=>{expect(sql015).toContain("limit p_limit for update skip locked");expect(sql015).toContain("gateway audit events are immutable");expect(sql015).toContain("pg_advisory_xact_lock");});
 });
