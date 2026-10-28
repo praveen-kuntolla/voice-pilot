@@ -52,10 +52,10 @@ describe("trusted authorization gateway", () => {
     expect(calls[0].sql).toContain("set_config");
   });
 
-  it("rejects cross-tenant payloads before opening a privileged transaction", async () => {
+  it("blocks direct provider-action mutations before opening a privileged transaction", async () => {
     const executor = { transaction: vi.fn() } as unknown as SafetyTransactionExecutor;
     const result = await executePrivilegedSafetyOperation({ identity: source(), executor, now: () => now }, { kind: "reserve", organizationId: org, now, request: { organizationId: other, provider: "mock", idempotencyKey: "key", maxConcurrent: 1, expiresAt: now + 1_000 } });
-    expect(result).toEqual({ status: "denied", reason: "cross_tenant_request" });
+    expect(result).toEqual({ status: "denied", reason: "composed_policy_gateway_required" });
     expect(executor.transaction).not.toHaveBeenCalled();
   });
 

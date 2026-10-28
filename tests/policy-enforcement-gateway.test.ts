@@ -19,6 +19,7 @@ const context: AuthoritativePolicyContext = {
   limits: { maxConcurrent: 2, currentConcurrent: 0, maxAttempts: 2, attempt: 0, maxSpendCents: 100, spentCents: 0, emergencyStop: false },
   callingHours: { timeZone: "UTC", startHour: 9, endHour: 17 },
   maxPerMinute: 5,
+  estimatedCostCents: 10,
 };
 const request = { organizationId: org, campaignId: "campaign", agentId: "agent", contactId: "contact", idempotencyKey: "one" };
 
@@ -46,6 +47,8 @@ describe("consolidated policy enforcement gateway", () => {
     await expect(authorizeProviderAction(stopped, request)).resolves.toMatchObject({ ok: false, reason: "emergency_stop" });
     const failed = harness(); failed.repository.load = async () => { throw new Error("offline"); };
     await expect(authorizeProviderAction(failed, request)).resolves.toMatchObject({ ok: false, reason: "policy_context_unavailable" });
+    const controls = harness(); controls.safety.getGlobalControl = async () => { throw new Error("offline"); };
+    await expect(authorizeProviderAction(controls, request)).resolves.toMatchObject({ ok: false, category: "unavailable", reason: "safety_control_unavailable" });
   });
 
   it("rejects missing/revoked consent, opt-out, invalid zones and calling-hour boundaries", async () => {
@@ -63,6 +66,15 @@ describe("consolidated policy enforcement gateway", () => {
     await expect(authorizeProviderAction(rate, request)).resolves.toMatchObject({ ok: false, reason: "rate_limit_reached" });
     const duplicate = harness(); expect((await authorizeProviderAction(duplicate, request)).ok).toBe(true);
     await expect(authorizeProviderAction(duplicate, request)).resolves.toMatchObject({ ok: false, reason: "duplicate_idempotency_key" });
+  });
+
+  it("fails closed when policy evaluation or authoritative claims throw", async () => {
+    const policy = harness({ callingHours: null as unknown as AuthoritativePolicyContext["callingHours"] });
+    await expect(authorizeProviderAction(policy, request)).resolves.toMatchObject({ ok: false });
+    const rate = harness(); rate.repository.claimRateLimit = async () => { throw new Error("offline"); };
+    await expect(authorizeProviderAction(rate, request)).resolves.toMatchObject({ ok: false, category: "unavailable", reason: "policy_claim_failed" });
+    const replay = harness(); replay.safety.claimReplay = async () => { throw new Error("offline"); };
+    await expect(authorizeProviderAction(replay, request)).resolves.toMatchObject({ ok: false, category: "unavailable", reason: "policy_claim_failed" });
   });
 
   it("uses the trusted clock instead of caller timestamps and handles concurrent duplicate claims atomically", async () => {
