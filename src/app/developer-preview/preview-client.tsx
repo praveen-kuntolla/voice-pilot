@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, CheckCircle2, ClipboardCheck, Contact, Download, LayoutDashboard, Megaphone, Settings2, ShieldCheck } from "lucide-react";
+import { Activity, BarChart3, Bot, CheckCircle2, ClipboardCheck, Contact, LayoutDashboard, Megaphone, Settings2, ShieldCheck } from "lucide-react";
 
 type Page = "Overview" | "Agents" | "Contacts" | "Campaigns" | "Calls" | "Analytics" | "Settings";
 type Agent = { id: number; name: string; language: string; status: "draft" | "active" };
