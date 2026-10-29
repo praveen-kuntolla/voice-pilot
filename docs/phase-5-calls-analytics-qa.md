@@ -1,11 +1,11 @@
 # VoicePilot Phase 5 — authenticated Calls and Analytics QA
 
-Status: **feature branch only; this authoring session has not run local Windows tests**.
+Status: **local Windows acceptance reported complete at commit `57ce5c02cc68fe72dfa702ee5889a85550df5c45`; independent GitHub CI and integration against updated `master` remain pending**.
 
 ## Dependencies and safety
 
 - Branch: `feature/authenticated-calls-analytics`, created from PR #17 head `1e076908ce898b2890acbd9b4737be48e89ce556`.
-- Open a **stacked draft PR targeting `feature/local-developer-preview-qa`** so the diff excludes PR #17. After PRs #16 and #17 are independently reviewed/merged, rebase/synchronize and rerun before retargeting `master`.
+- Use a **stacked PR targeting `feature/local-developer-preview-qa`** so the diff excludes PR #17. PR #16 is merged. PR #17 remains open and is currently behind updated `master`; synchronize and retest PR #17, then review/merge it. Synchronize this branch with updated `master`, rerun acceptance, and only then retarget.
 - The established local database migration ledger stays **001–011**. Migrations **012–016 are review-only and must not run on established or remote databases**.
 - No provider connectivity or real calls, texts, STT, TTS, LLM, LiveKit, remote Supabase, billing, deployment, or external telemetry.
 
@@ -55,7 +55,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run-isolated-e2e.ps1 -TestSel
 
 Pick an available loopback port; **never kill a pre-existing listener without ownership verification**. The established E2E runner enforces local Compose identity, migration ledger 001–011, fixture cleanup, and process ownership. Don't paste fixture credentials into logs or commit them.
 
-Record PASS/FAIL/SKIPPED/NOT IMPLEMENTED by route and button, screenshot evidence, browser console/network errors, test counts, and isolated fixture cleanup. The new routes cannot be marked QA-passed solely from code review.
+Record PASS/FAIL/SKIPPED/NOT IMPLEMENTED by route and button, screenshot evidence, browser console/network errors, test counts, and isolated fixture cleanup. The new routes have now passed the locally reported isolated acceptance run below. No independent GitHub Actions checks are recorded; review integration again after the upstream branch changes.
 
 ## Explicit limitations
 
@@ -63,3 +63,25 @@ Record PASS/FAIL/SKIPPED/NOT IMPLEMENTED by route and button, screenshot evidenc
 - No call audio, dialer, recording, transcript, contact lookup, actual agent response, duration, billing, cost, or real conversion analytics is available.
 - The developer preview remains a separate simulation-only page; it does not grant authentication.
 - No automatic merge or deployment.
+
+## Local Windows QA acceptance — 2026-10-29
+
+Latest reported test/repair commit: `57ce5c02cc68fe72dfa702ee5889a85550df5c45`.
+
+- Explicit `force-dynamic` rendering added on both new authenticated pages; user session and organization membership checks remain in place.
+- Isolated test runner now captures and reports the original setup/test failure separately from a cleanup failure.
+- **Vitest:** 231 passed, 15 skipped.
+- **TypeScript:** passed.
+- **ESLint:** passed.
+- **Production build:** passed with **process-scoped isolated Supabase** environment variables.
+- **Authenticated Playwright:** 20 passed, 3 skipped.
+- **Fixture cleanup:** passed; fixture metadata removed.
+- **`git diff --check`:** passed.
+- Established migration ledger **001–011** untouched; migrations **012–016** remain review-only and unapplied to established/remote databases.
+- Generated `next-env.d.ts` and `tsconfig.tsbuildinfo` remain unstaged/uncommitted in the user's test worktree.
+
+The acceptance counts are from the user's local Codex report, not independent GitHub-hosted CI. No deployment, provider connectivity, real call, remote Supabase activity, or PR merge is authorized by this report.
+
+### Post-merge integration requirement
+
+PR #16 was subsequently merged into `master`. At last check, PR #17 was **6 commits behind `master`**, so perform an intentional synchronization and conflict review for PR #17 before merging it, then update PR #18 from its new base and rerun the relevant browser and build tests. Do not assume a previously passing stacked PR is merge-ready against a changed `master`.
