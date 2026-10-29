@@ -8,7 +8,7 @@ This gateway foundation is **offline-tested only**. It cannot dispatch calls, me
 
 The server verifies the authenticated actor and organization membership, opens a PostgreSQL transaction, reduces the database role to `service_role`, binds the verified actor and organization with transaction-local settings, and then loads campaign, agent, contact, provider approval, quota, calling-hours, consent, concurrency, rate, and spend policy from PostgreSQL. The same transaction claims rate and replay protection, reserves concurrency, and reserves estimated spend. Any denial after a claim rolls the entire transaction back. Connections are always released; transaction-local identity is tested to be absent on reuse.
 
-`createDisposableLocalGatewayPool()` validates only a loopback hostname and a database name beginning with `vp_gateway_`; it does not verify a container identity or fixed port. The separate acceptance script verifies the Compose project, volume, published loopback endpoint, and established ledger before constructing that pool. Production must provide a dedicated, least-privilege server credential through a secret manager; transaction-local `SET ROLE` is defense in depth and is not a substitute for that credential. Rotation requires creating a replacement credential, validating read/routine permissions, draining the old pool, switching atomically, and revoking the old credential. Database and pool outages fail closed. A failed rollback or uncertain commit causes `pg` to discard the client instead of returning it to the reusable pool.
+`createDisposableLocalGatewayPool()` validates only a loopback hostname and an explicitly disposable database name beginning with `vp_gateway_` or `vp_operational_`; it does not verify a container identity or fixed port. The separate acceptance script verifies the Compose project, volume, published loopback endpoint, and established ledger before constructing that pool. Production must provide a dedicated, least-privilege server credential through a secret manager; transaction-local `SET ROLE` is defense in depth and is not a substitute for that credential. Rotation requires creating a replacement credential, validating read/routine permissions, draining the old pool, switching atomically, and revoking the old credential. Database and pool outages fail closed. A failed rollback or uncertain commit causes `pg` to discard the client instead of returning it to the reusable pool.
 
 ## Role and data rules
 
@@ -17,7 +17,7 @@ The server verifies the authenticated actor and organization membership, opens a
 - Policy state is organization-bound and campaign/agent/contact ownership is independently checked.
 - Provider policy must be enabled, both approvals must be active, and governance quota concurrency must match the safety limit.
 - Consent must be explicitly granted and opt-out must be absent.
-- Retry execution is not implemented. Migration 014 records a maximum, but this gateway prepares only attempt zero; production retries remain blocked until durable attempt accounting exists.
+- Migration 015 adds review-only durable synthetic attempt accounting. Every preparation reserves an organization/campaign/contact/agent/provider-bound attempt in the same transaction as rate, replay, concurrency and estimated spend. It still performs no retry dispatch.
 
 ## Observability
 

@@ -73,4 +73,15 @@ export class PostgresDurableSafetyStore implements DurableSafetyStore {
       return { ok: false, error: result?.error === "budget_exceeded" ? "budget_exceeded" : "unavailable" };
     } catch { return { ok: false, error: "unavailable" }; }
   }
+
+  async reserveRetryAttempt(request: { organizationId: string; campaignId: string; contactId: string; agentId: string; provider: string; idempotencyKey: string; attemptKind: "original" | "retry"; maxAttempts: number; expiresAt: number }, now: number): Promise<{ ok: true; attemptId: string; attemptNumber: number; reused: boolean } | { ok: false; error: "invalid" | "retry_limit" | "policy_changed" | "conflict" | "unavailable" }> {
+    if (![request.organizationId,request.campaignId,request.contactId,request.agentId].every(uuid) || !text(request.provider) || !text(request.idempotencyKey) || !["original","retry"].includes(request.attemptKind) || !Number.isSafeInteger(request.maxAttempts) || request.maxAttempts < 1 || request.maxAttempts > 10 || !instant(now) || !instant(request.expiresAt) || request.expiresAt <= now) return { ok:false,error:"invalid" };
+    try {
+      const row = await this.one<{ result: { ok:boolean; attemptId?:string; attemptNumber?:number; reused?:boolean; error?:string } }>("select voicepilot_safety.reserve_retry_attempt($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::text,$6::text,$7::text,$8::integer,$9::timestamptz) result", [request.organizationId,request.campaignId,request.contactId,request.agentId,request.provider,request.idempotencyKey,request.attemptKind,request.maxAttempts,new Date(request.expiresAt).toISOString()]);
+      const result=row?.result;
+      if(result?.ok===true && typeof result.attemptId==="string" && Number.isSafeInteger(result.attemptNumber) && typeof result.reused==="boolean") return {ok:true,attemptId:result.attemptId,attemptNumber:result.attemptNumber!,reused:result.reused};
+      const allowed=["retry_limit","policy_changed","conflict"] as const; const error=allowed.find((item)=>item===result?.error);
+      return {ok:false,error:error??"unavailable"};
+    } catch { return {ok:false,error:"unavailable"}; }
+  }
 }
