@@ -231,9 +231,9 @@ test.describe("Phase 6 multi-turn Agent Test Studio", () => {
       await route.fulfill({ status: 403, contentType: "application/json", body: '{"error":"Not authorized"}' });
     });
     await page.getByRole("button", { name: "Run simulation" }).click();
-    await expect(page.getByText("No mock sources yet. Source text remains only in this browser until reset, authorization loss, or removal.")).toBeVisible();
+    await expect(page.getByLabel("Mock source title")).toHaveCount(0);
     await expect(page.getByText(/Tenant A mock notes · excerpt 1/)).toHaveCount(0);
-    await expect(page.getByText("A current server-approved simulation preflight is required before adding or retrieving mock sources.")).toBeVisible();
+    await expect(page.getByText("Run a server-approved simulation preflight before adding or retrieving mock sources. Reset, authorization denial, and agent changes clear this panel.")).toBeVisible();
   });
 
   test("Clear all prevents a delayed browser file read from restoring Knowledge Lab state", async ({ page }) => {
