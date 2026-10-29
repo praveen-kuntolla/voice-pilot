@@ -28,6 +28,19 @@ export const simulationPresets:readonly SimulationPreset[]=[
   {id:"mock-failure",label:"Provider failure",description:"A deterministic mock provider failure.",turns:["Run the failure path for this synthetic scenario."],mode:"error"},
 ];
 export function getSimulationPreset(id:string){return simulationPresets.find((preset)=>preset.id===id);}
+/** Client-side fail-closed display guard. The server endpoint remains authoritative. */
+export function isAuthorizedAgentTestPreflight(
+  preflight: { allowed?: boolean; agentId?: string; organizationId?: string } | null,
+  expectedAgentId: string,
+  existingOrganizationId?: string,
+) {
+  return preflight?.allowed === true
+    && preflight.agentId === expectedAgentId
+    && typeof preflight.organizationId === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(preflight.organizationId)
+    && (!existingOrganizationId || preflight.organizationId === existingOrganizationId);
+}
+
 export function validateSimulationInput(value:string){const text=value.trim();if(!text)return "Simulated speech is required";if(text.length>MAX_SIMULATION_INPUT_LENGTH)return `Simulated speech must be ${MAX_SIMULATION_INPUT_LENGTH} characters or fewer`;return null;}
 const delay=(milliseconds:number)=>new Promise<void>(resolve=>setTimeout(resolve,milliseconds));
 
