@@ -1,6 +1,6 @@
 # PR #17 developer preview QA
 
-Tested locally on `http://127.0.0.1:3002/developer-preview` with synthetic in-memory data only. The authenticated checks used the isolated local Supabase fixtures through the existing runner on port 3003; no remote services or provider integrations were used.
+Tested locally on `http://127.0.0.1:3003/developer-preview` with synthetic in-memory data only. The authenticated checks used the isolated local Supabase fixtures through the existing runner on port 3001; no remote services or provider integrations were used.
 
 ## Control matrix
 
@@ -20,14 +20,14 @@ Tested locally on `http://127.0.0.1:3002/developer-preview` with synthetic in-me
 ## Results
 
 - Developer-preview Playwright: **3 passed**.
-- Isolated authenticated Playwright: **17 passed, 3 skipped**. The three skipped tests are the development-only preview tests when the production runner is used.
+- Isolated authenticated Playwright: **19 passed, 3 skipped**. The three skipped tests are the development-only preview tests when the production runner is used.
 - TypeScript, ESLint and production build: **passed**.
 - Browser page errors and failed requests observed during the focused control run: **none**.
 - Fixture cleanup: **passed** through the existing isolated runner.
 
 The export implementation now keeps its object URL alive briefly after the click so browsers can complete the download before cleanup. The existing preview remains synthetic and session-local.
 
-## Latest navigation correction — pending local acceptance
+## Latest navigation correction — verified locally
 
 After the above recorded test run, PR #17 also corrected the **real authenticated dashboard** sidebar:
 - `Settings` now resolves to the implemented `/settings` page, not missing `/dashboard/settings`.
@@ -35,7 +35,7 @@ After the above recorded test run, PR #17 also corrected the **real authenticate
 - The `/settings` route now requires authentication in the Next.js session proxy.
 - New `tests/e2e/dashboard-navigation.spec.ts` verifies guest redirect, authenticated link destinations, Settings navigation, and simulation-studio navigation.
 
-**Status: NOT YET RERUN** for these additional changes. The earlier 3 developer-preview / 17 authenticated test results do **not** independently certify the new navigation/auth code. Run the isolated Playwright suite again and record fresh counts before marking the PR ready.
+Fresh isolated Playwright execution verified the guest redirect and authenticated Settings/simulation navigation: **2 passed**. The full isolated run completed with **19 passed, 3 skipped** and fixture cleanup passed.
 
 ## Coverage limitations
 
