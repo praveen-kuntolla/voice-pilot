@@ -38,7 +38,10 @@ declare prior voicepilot_safety.provider_retry_ledger%rowtype; last_number integ
 begin
   if p_org is null or p_campaign is null or p_contact is null or p_agent is null or p_provider is null or length(trim(p_provider)) not between 1 and 80
     or p_key is null or length(trim(p_key)) not between 1 and 256 or p_kind not in ('original','retry') or p_max not between 1 and 10
-    or p_expires is null or p_expires <= clock_timestamp() then return jsonb_build_object('ok',false,'error','invalid'); end if;
+    or p_expires is null or p_expires <= clock_timestamp()
+    or nullif(current_setting('voicepilot.organization_id',true),'') is distinct from p_org::text
+    or voicepilot_safety.current_actor() is null
+    or not exists(select 1 from public.organization_members where organization_id=p_org and user_id=voicepilot_safety.current_actor()) then return jsonb_build_object('ok',false,'error','unauthorized'); end if;
   if not voicepilot_safety.safety_enabled(p_org) then return jsonb_build_object('ok',false,'error','unavailable_or_stopped'); end if;
   perform pg_advisory_xact_lock(hashtextextended('retry:'||p_org::text||':'||p_campaign::text||':'||p_contact::text||':'||p_provider,0));
   select * into prior from voicepilot_safety.provider_retry_ledger where organization_id=p_org and idempotency_key=p_key;
@@ -74,6 +77,29 @@ begin
   if n=1 then update voicepilot_safety.provider_retry_ledger l set state=p_state,finished_at=clock_timestamp() where organization_id=p_org and idempotency_key=(select idempotency_key from voicepilot_safety.provider_retry_attempts where id=p_id); end if;
   if n=1 then insert into voicepilot_safety.provider_safety_audit(organization_id,action,detail) values(p_org,'retry_attempt_finished',jsonb_build_object('attemptId',p_id,'state',p_state)); end if;
   return n=1;
+end $$;
+
+create or replace function voicepilot_safety.reconcile_retry_attempts(p_before timestamptz,p_limit integer) returns integer
+language plpgsql security definer set search_path=pg_catalog as $$
+declare n integer;
+begin
+  if p_before is null or p_before>clock_timestamp() or p_limit not between 1 and 1000 then return 0; end if;
+  with victims as (select id from voicepilot_safety.provider_retry_attempts where state='reserved' and expires_at<=p_before order by expires_at limit p_limit for update skip locked), changed as (
+    update voicepilot_safety.provider_retry_attempts a set state='expired',finished_at=clock_timestamp() where a.id in(select id from victims) returning a.organization_id,a.id,a.idempotency_key)
+  update voicepilot_safety.provider_retry_ledger l set state='expired',finished_at=clock_timestamp() from changed c where l.organization_id=c.organization_id and l.idempotency_key=c.idempotency_key;
+  get diagnostics n=row_count;
+  return n;
+end $$;
+
+create or replace function voicepilot_safety.cleanup_retry_attempts(p_before timestamptz,p_limit integer) returns integer
+language plpgsql security definer set search_path=pg_catalog as $$
+declare n integer;
+begin
+  if p_before is null or p_before>clock_timestamp() or p_limit not between 1 and 1000 then return 0; end if;
+  with victims as (select id from voicepilot_safety.provider_retry_attempts where state in('failed','cancelled','expired') and finished_at<=p_before order by finished_at limit p_limit for update skip locked)
+  delete from voicepilot_safety.provider_retry_attempts where id in(select id from victims);
+  get diagnostics n=row_count;
+  return n;
 end $$;
 
 revoke all on all functions in schema voicepilot_safety from public,anon,authenticated;

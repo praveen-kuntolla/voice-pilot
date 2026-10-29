@@ -25,7 +25,7 @@ try {
   psql(database, "drop schema public cascade; create schema auth; create table auth.users(id uuid primary key); create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;");
   const schema = run(["exec", container, "pg_dump", "-U", "postgres", "-d", "postgres", "--schema-only", "--no-owner", "--no-privileges", "--schema=public", "--schema=supabase_migrations"]);
   psql(database, schema);
-  for (const name of ["202610220012_durable_safety_foundations.sql", "202610220013_transactional_safety.sql", "202610220014_production_gateway_foundations.sql", "202610220015_operational_safety.sql"]) psql(database, readFileSync(resolve("supabase/migrations", name), "utf8"));
+  for (const name of ["202610220012_durable_safety_foundations.sql", "202610220013_transactional_safety.sql", "202610220014_production_gateway_foundations.sql", "202610220015_operational_safety.sql", "202610220016_retry_audit_hardening.sql"]) psql(database, readFileSync(resolve("supabase/migrations", name), "utf8"));
   psql(database, `
     insert into auth.users(id) values('${actor}');
     insert into public.organizations(id,name,industry,country,timezone,created_by) values
