@@ -26,9 +26,10 @@ The Agent Test Studio is a local, deterministic simulation. It supports a bounde
 - `tests/e2e/phase-6-agent-studio.spec.ts`: authorized first turn → intercepted 403 on second preflight → timeline, export and prior approval disappear; retry denied, then recover through a **fresh successful** preflight; reject mismatched agent and mismatched organization; cap at eight without a ninth preflight; reset while a denied preflight response is pending. Requires the established isolated local Supabase fixtures.
 - Other authenticated E2E and tests are unchanged except when explicitly covered above.
 
-### Current verification evidence — PR head `f63534a768f17d48983115e99dd2b641aea41361`
+### Current verification evidence — PR head `580fb00cfbb9b869e55f5c5b474d7f145811ecda`
 
 - GitHub offline CI was independently verified successful at the preceding review head: both the push workflow (`40825365503`) and PR workflow (`40825369496`) completed all six checks green. Recorded hosted totals were **250 Vitest passed / 20 skipped**, **51 Python passed**, **3 synthetic developer-preview Chromium passed**, with npm install, TypeScript, ESLint, production build, and `git diff --check` passing.
+- The documentation follow-up itself also passed all six checks in push workflow `40826176580` and PR workflow `40826182651` (Python worker, synthetic Chromium, and TypeScript/ESLint/Vitest/build jobs all green).
 - Fresh user-controlled isolated authenticated Playwright at the current head passed **29 tests with 3 skipped**. It covered denial revocation, organization and agent mismatch rejection, the eight-turn cap, reset and unmount stale-response suppression, existing authenticated workflows, and no external provider requests. Disposable fixture cleanup succeeded; the temporary `.local` junction was removed and fixture metadata was absent afterward.
 - Fresh focused runtime verification passed **13 Vitest tests**, TypeScript, ESLint, and `git diff --check`. The broader hosted CI remains the authoritative full-suite result; any checks triggered by the documentation-only follow-up commit should be recorded separately from these prior results.
 
