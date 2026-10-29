@@ -26,11 +26,12 @@ The Agent Test Studio is a local, deterministic simulation. It supports a bounde
 - `tests/e2e/phase-6-agent-studio.spec.ts`: authorized first turn → intercepted 403 on second preflight → timeline, export and prior approval disappear; retry denied, then recover through a **fresh successful** preflight; reject mismatched agent and mismatched organization; cap at eight without a ninth preflight; reset while a denied preflight response is pending. Requires the established isolated local Supabase fixtures.
 - Other authenticated E2E and tests are unchanged except when explicitly covered above.
 
-### Verification evidence — current PR head `8780a68616702661daa35bf2d2a95696dbe4c88c`
+### Verification evidence
 
-- Historical verification baseline: commit `580fb00cfbb9b869e55f5c5b474d7f145811ecda` passed all six checks in push workflow `40826176580` and PR workflow `40826182651`.
-- Current-head GitHub CI: push workflow `40826347995` and PR workflow `40826354353` both completed **6/6 checks green**. Hosted totals were **250 Vitest passed / 20 skipped**, **51 Python passed**, and **3 synthetic developer-preview Chromium passed**; npm install, TypeScript, ESLint, production build, and `git diff --check` also passed.
-- Fresh user-controlled isolated authenticated Playwright at the current head passed **29 tests with 3 skipped**. It covered denial revocation, organization and agent mismatch rejection, the eight-turn cap, reset and unmount stale-response suppression, existing authenticated workflows, and no external provider requests. Disposable fixture cleanup succeeded; the temporary `.local` junction was removed and fixture metadata was absent afterward.
+- Historical application-code verification baseline: commit `8780a68616702661daa35bf2d2a95696dbe4c88c` had **250 Vitest passed / 20 skipped**, **51 Python passed**, and **3 synthetic developer-preview Chromium passed** through GitHub CI; TypeScript, ESLint, production build, and diff checks also passed.
+- Earlier historical documentation baseline: commit `580fb00cfbb9b869e55f5c5b474d7f145811ecda` passed all six checks in push workflow `40826176580` and PR workflow `40826182651`.
+- Latest documentation-state GitHub CI: push workflow `40826347995` and PR workflow `40826354353` both completed **6/6 checks green**. Hosted totals were **250 Vitest passed / 20 skipped**, **51 Python passed**, and **3 synthetic developer-preview Chromium passed**; npm install, TypeScript, ESLint, production build, and `git diff --check` also passed.
+- Fresh user-controlled isolated authenticated Playwright passed **29 tests with 3 skipped**. It covered denial revocation, organization and agent mismatch rejection, the eight-turn cap, reset and unmount stale-response suppression, existing authenticated workflows, and no external provider requests. Disposable fixture cleanup succeeded; the temporary `.local` junction was removed and fixture metadata was absent afterward. This local evidence is separate from hosted CI.
 - Fresh focused runtime verification passed **13 Vitest tests**, TypeScript, ESLint, and `git diff --check`. The broader hosted CI remains the authoritative full-suite result; any checks triggered by the documentation-only follow-up commit should be recorded separately from these prior results.
 
 ### Independent hosted CI
