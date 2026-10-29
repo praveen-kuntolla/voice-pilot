@@ -22,7 +22,7 @@ test.describe("Phase 3.20 testing studio", () => {
     await page.getByLabel("Simulation agent").selectOption({ index: 1 });
     await page.getByRole("button", { name: "Run simulation" }).click();
     await expect(page.getByText("Policy preflight")).toBeVisible();
-    await page.getByRole("button", { name: "Reset" }).click();
+    await page.getByRole("button", { name: "Reset", exact: true }).click();
     await expect(page.getByText("No simulated events yet.")).toBeVisible();
   });
 
