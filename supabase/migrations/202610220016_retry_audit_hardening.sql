@@ -61,8 +61,8 @@ begin
   new_id:=gen_random_uuid();
   insert into voicepilot_safety.provider_retry_ledger(attempt_id,organization_id,campaign_id,contact_id,agent_id,provider,idempotency_key,attempt_number,attempt_kind,state)
     values(new_id,p_org,p_campaign,p_contact,p_agent,p_provider,p_key,new_number,p_kind,'reserved');
-  insert into voicepilot_safety.provider_retry_attempts(organization_id,campaign_id,contact_id,agent_id,provider,idempotency_key,attempt_number,attempt_kind,expires_at)
-    values(p_org,p_campaign,p_contact,p_agent,p_provider,p_key,new_number,p_kind,p_expires);
+  insert into voicepilot_safety.provider_retry_attempts(id,organization_id,campaign_id,contact_id,agent_id,provider,idempotency_key,attempt_number,attempt_kind,expires_at)
+    values(new_id,p_org,p_campaign,p_contact,p_agent,p_provider,p_key,new_number,p_kind,p_expires);
   insert into voicepilot_safety.provider_safety_audit(organization_id,action,detail) values(p_org,'retry_attempt_reserved',jsonb_build_object('attemptId',new_id,'attemptNumber',new_number,'kind',p_kind));
   return jsonb_build_object('ok',true,'attemptId',new_id,'attemptNumber',new_number,'reused',false);
 end $$;
