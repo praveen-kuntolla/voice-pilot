@@ -96,6 +96,12 @@ test.describe("Phase 6 multi-turn Agent Test Studio", () => {
       await page.getByLabel("Simulation agent").selectOption({ index: 1 });
       await page.getByRole("button", { name: "Run simulation" }).click();
       await expect(page.getByText(/Turns completed: 1/)).toBeVisible();
+      await page.getByLabel("Mock source title").fill("Authorized mock source");
+      await page.getByLabel("Paste mock text or Markdown").fill("A fictional tenant-specific source excerpt.");
+      await page.getByRole("button", { name: "Add mock source" }).click();
+      await page.getByLabel("Mock question for lexical excerpt matching").fill("tenant excerpt");
+      await page.getByRole("button", { name: "Find source excerpts" }).click();
+      await expect(page.getByText(/Authorized mock source · excerpt 1/)).toBeVisible();
 
       await page.route("**/api/agents/*/simulation-preflight", async (route) => {
         const badResult = mismatch === "organization"
@@ -106,6 +112,7 @@ test.describe("Phase 6 multi-turn Agent Test Studio", () => {
       await page.getByRole("button", { name: "Run simulation" }).click();
       await expect(page.getByText("No simulated events yet.")).toBeVisible();
       await expect(page.getByRole("button", { name: "Preview JSON export" })).toHaveCount(0);
+      await expect(page.getByText(/Authorized mock source · excerpt 1/)).toHaveCount(0);
       await expect(page.locator('p[role="alert"]')).toContainText("new server-approved preflight");
     });
   }
@@ -178,6 +185,94 @@ test.describe("Phase 6 multi-turn Agent Test Studio", () => {
     await expect(page.getByText("No simulated events yet.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Preview TXT export" })).toHaveCount(0);
     await expect(page.locator("pre")).toHaveCount(0);
+  });
+
+  test("retrieves exact cited mock excerpts locally and never treats them as generated answers", async ({ page }) => {
+    await login(page);
+    await page.goto("/dashboard/agents/test");
+    await page.getByLabel("Simulation agent").selectOption({ index: 1 });
+    await page.getByRole("button", { name: "Run simulation" }).click();
+    await expect(page.getByText(/Turns completed: 1/)).toBeVisible();
+    await page.getByLabel("Mock source title").fill("Fictional onboarding notes");
+    await page.getByLabel("Paste mock text or Markdown").fill("The fictional onboarding preview includes a weekday walkthrough and private token FictionalOnlyTokenX.");
+    await page.getByRole("button", { name: "Add mock source" }).click();
+    await page.getByLabel("Mock question for lexical excerpt matching").fill("When is the weekday walkthrough?");
+    await page.getByRole("button", { name: "Find source excerpts" }).click();
+    await expect(page.getByText("Citation:")).toBeVisible();
+    await expect(page.getByText(/Fictional onboarding notes · excerpt 1/)).toBeVisible();
+    await expect(page.locator("blockquote")).toContainText("weekday walkthrough");
+    await page.getByLabel("Mock question for lexical excerpt matching").fill("Where are the zebras?");
+    await page.getByRole("button", { name: "Find source excerpts" }).click();
+    await expect(page.getByText("No matching source excerpt — no grounded answer available.")).toBeVisible();
+    await page.getByRole("button", { name: "Preview JSON export" }).click();
+    await expect(page.locator("pre")).not.toContainText("FictionalOnlyTokenX");
+  });
+
+  test("clears mock sources and excerpts when the authoritative preflight is denied", async ({ page }) => {
+    await login(page);
+    await page.goto("/dashboard/agents/test");
+    await page.getByLabel("Simulation agent").selectOption({ index: 1 });
+    await page.getByRole("button", { name: "Run simulation" }).click();
+    await page.getByLabel("Mock source title").fill("Tenant A mock notes");
+    await page.getByLabel("Paste mock text or Markdown").fill("Only a fictional source excerpt belongs to this authorized session.");
+    await page.getByRole("button", { name: "Add mock source" }).click();
+    await page.getByLabel("Mock question for lexical excerpt matching").fill("fictional excerpt");
+    await page.getByRole("button", { name: "Find source excerpts" }).click();
+    await expect(page.getByText(/Tenant A mock notes · excerpt 1/)).toBeVisible();
+    await page.getByRole("button", { name: "Remove" }).click();
+    await expect(page.getByText(/Tenant A mock notes · excerpt 1/)).toHaveCount(0);
+    await page.getByLabel("Mock source title").fill("Tenant A mock notes");
+    await page.getByLabel("Paste mock text or Markdown").fill("Only a fictional source excerpt belongs to this authorized session.");
+    await page.getByRole("button", { name: "Add mock source" }).click();
+    await page.getByRole("button", { name: "Find source excerpts" }).click();
+    await expect(page.getByText(/Tenant A mock notes · excerpt 1/)).toBeVisible();
+
+    await page.route("**/api/agents/*/simulation-preflight", async (route) => {
+      await route.fulfill({ status: 403, contentType: "application/json", body: '{"error":"Not authorized"}' });
+    });
+    await page.getByRole("button", { name: "Run simulation" }).click();
+    await expect(page.getByLabel("Mock source title")).toHaveCount(0);
+    await expect(page.getByText(/Tenant A mock notes · excerpt 1/)).toHaveCount(0);
+    await expect(page.getByText("Run a server-approved simulation preflight before adding or retrieving mock sources. Reset, authorization denial, and agent changes clear this panel.")).toBeVisible();
+  });
+
+  test("Clear all prevents a delayed browser file read from restoring Knowledge Lab state", async ({ page }) => {
+    await page.addInitScript(() => {
+      let release: (() => void) | undefined;
+      Object.assign(window, {
+        __releaseDelayedKnowledgeFile: () => release?.(),
+        __delayedKnowledgeFileResolved: false,
+      });
+      File.prototype.text = function () {
+        return new Promise((resolve) => {
+          release = () => {
+            Object.assign(window, { __delayedKnowledgeFileResolved: true });
+            resolve("Delayed stale mock source should never repopulate the lab.");
+          };
+        });
+      };
+    });
+    await login(page);
+    await page.goto("/dashboard/agents/test");
+    await page.getByLabel("Simulation agent").selectOption({ index: 1 });
+    await page.getByRole("button", { name: "Run simulation" }).click();
+    await page.getByLabel("Mock source title").fill("Existing mock source");
+    await page.getByLabel("Paste mock text or Markdown").fill("Existing fictional excerpt for retrieval.");
+    await page.getByRole("button", { name: "Add mock source" }).click();
+    await page.getByLabel("Mock question for lexical excerpt matching").fill("fictional excerpt");
+    await page.getByRole("button", { name: "Find source excerpts" }).click();
+    await expect(page.getByText(/Existing mock source · excerpt 1/)).toBeVisible();
+
+    await page.locator("#knowledge-source-file").setInputFiles({ name: "delayed.md", mimeType: "text/markdown", buffer: Buffer.from("placeholder") });
+    await page.getByRole("button", { name: "Clear all" }).click();
+    await page.evaluate(() => (window as unknown as { __releaseDelayedKnowledgeFile: () => void }).__releaseDelayedKnowledgeFile());
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __delayedKnowledgeFileResolved: boolean }).__delayedKnowledgeFileResolved)).toBe(true);
+
+    await expect(page.getByLabel("Mock source title")).toHaveValue("");
+    await expect(page.getByLabel("Paste mock text or Markdown")).toHaveValue("");
+    await expect(page.getByText("No mock sources yet. Source text remains only in this browser until reset, authorization loss, or removal.")).toBeVisible();
+    await expect(page.getByText(/Existing mock source · excerpt 1/)).toHaveCount(0);
+    await expect(page.getByText("Local file read into the draft only. Review and save it; no upload occurred.")).toHaveCount(0);
   });
 
 });
