@@ -7,6 +7,8 @@
 export const MAX_KNOWLEDGE_SOURCES = 5;
 export const MAX_SOURCE_CHARACTERS = 10_000;
 export const MAX_TOTAL_SOURCE_CHARACTERS = 40_000;
+/** Conservative browser-file limit before decoding text into JavaScript memory. */
+export const MAX_KNOWLEDGE_FILE_BYTES = 40_000;
 export const MAX_KNOWLEDGE_QUESTION_CHARACTERS = 500;
 export const MAX_RETRIEVAL_MATCHES = 3;
 export const MAX_PASSAGE_CHARACTERS = 700;
@@ -69,7 +71,28 @@ export function validateKnowledgeQuestion(question: string) {
 
 export function isSupportedKnowledgeFile(file: Pick<File, "name" | "type">) {
   const name = file.name.toLowerCase();
-  return file.type === "text/plain" || file.type === "text/markdown" || name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".markdown");
+  const expectedExtension = name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".markdown");
+  const supportedType = file.type === "" || file.type === "text/plain" || file.type === "text/markdown";
+  return expectedExtension && supportedType;
+}
+
+/** Reject unsupported or too-large browser files before File.text() allocates content. */
+export function validateKnowledgeFile(file: Pick<File, "name" | "type" | "size">) {
+  if (!isSupportedKnowledgeFile(file)) return "Only local .txt, .md, or .markdown mock files are supported. Files are never uploaded.";
+  if (!Number.isSafeInteger(file.size) || file.size < 0 || file.size > MAX_KNOWLEDGE_FILE_BYTES) return `Mock files must be ${MAX_KNOWLEDGE_FILE_BYTES.toLocaleString()} bytes or smaller.`;
+  return null;
+}
+
+/**
+ * Invalidates asynchronous browser File.text() completions when the authorized
+ * session changes. It intentionally stores no source content.
+ */
+export class KnowledgeFileReadGate {
+  private generation = 0;
+
+  begin() { return ++this.generation; }
+  invalidate() { this.generation++; }
+  isCurrent(token: number) { return token === this.generation; }
 }
 
 function normalized(value: string) {

@@ -8,16 +8,16 @@ The deterministic matcher normalizes and tokenizes lexical terms, splits each so
 
 ## Safety and privacy boundary
 
-- Only `.txt` and `.md` files selected through the browser and pasted text/Markdown are accepted. Files are read locally with browser APIs; they are never uploaded.
+- Only `.txt`, `.md`, and `.markdown` files selected through the browser and pasted text/Markdown are accepted. Their extension and MIME type are checked, and a 40,000-byte cap is enforced before browser decoding; files are read locally and never uploaded.
 - Limits are five sources, 10,000 characters per source, 40,000 total characters, and 500 characters per question.
 - Source text, questions, and excerpts are React state only. The feature does not use localStorage, sessionStorage, IndexedDB, Supabase writes, uploads, analytics, or telemetry.
 - Source content is rendered as plain text. It is untrusted data: text such as `ignore prior instructions` is not executed or followed.
-- The existing transcript preview/export does not include Knowledge Lab sources, questions, or excerpts. Copying an excerpt into the simulation input is a visible user action and does not create an event until the user separately runs the local simulation.
+- The existing transcript preview/export does not include Knowledge Lab sources, questions, or excerpts. Copying an excerpt into the simulation input is a visible user action and does not create an event until the user separately runs the local simulation; if the user then runs a turn, that copied text can appear in the separately reviewed simulated transcript export.
 - No LLM, STT, TTS, LiveKit, telephony, microphone, provider, message, billing, or network provider action is introduced.
 
 ## Authorization lifecycle
 
-Knowledge Lab access uses the already-existing server-authoritative Agent Test Studio preflight; it does not invent a browser organization claim. Reset, agent change, malformed/denied preflight, an organization/agent mismatch, and unmount clear the current controller and invalidate browser Knowledge Lab state. A new successful preflight is required before sources can be added or searched. Transcript export remains hidden while preflight is revalidated and after denial.
+Knowledge Lab access uses the already-existing server-authoritative Agent Test Studio preflight; it does not invent a browser organization claim. Reset, agent change, malformed/denied preflight, an organization/agent mismatch, and unmount clear the current controller and invalidate browser Knowledge Lab state. Pending browser file reads carry a session-bound generation token and cannot restore drafts, notices, or excerpts after that invalidation. A new successful preflight is required before sources can be added or searched. Transcript export remains hidden while preflight is revalidated and after denial.
 
 ## Reproducible checks
 

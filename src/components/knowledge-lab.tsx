@@ -8,8 +8,9 @@ import {
   MAX_SOURCE_CHARACTERS,
   MAX_TOTAL_SOURCE_CHARACTERS,
   NO_MATCHING_EXCERPT,
-  isSupportedKnowledgeFile,
+  KnowledgeFileReadGate,
   retrieveKnowledgeExcerpts,
+  validateKnowledgeFile,
   validateKnowledgeQuestion,
   validateKnowledgeSource,
   type KnowledgeExcerpt,
@@ -38,8 +39,14 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
   const [notice, setNotice] = useState("");
   const sourceSequence = useRef(0);
   const lastSession = useRef<string | null>(null);
+  const sourcesRef = useRef<KnowledgeSource[]>([]);
+  const fileReadGate = useRef(new KnowledgeFileReadGate());
+  const mountedRef = useRef(true);
+  const sessionRef = useRef({ authorized, busy, sessionKey });
+  sessionRef.current = { authorized, busy, sessionKey };
 
   function clearEphemeralKnowledge() {
+    sourcesRef.current = [];
     setSources([]);
     setDraft(emptyDraft);
     setEditingId(null);
@@ -50,9 +57,18 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
   }
 
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      fileReadGate.current.invalidate();
+    };
+  }, []);
+
+  useEffect(() => {
     const identity = `${sessionKey}:${authorized}`;
     if (lastSession.current === identity) return;
     lastSession.current = identity;
+    fileReadGate.current.invalidate();
     clearEphemeralKnowledge();
   }, [authorized, sessionKey]);
 
@@ -64,7 +80,8 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
       setError("A current server-approved simulation preflight is required before using mock sources.");
       return;
     }
-    const existing = editingId ? sources.filter((source) => source.id !== editingId) : sources;
+    const currentSources = sourcesRef.current;
+    const existing = editingId ? currentSources.filter((source) => source.id !== editingId) : currentSources;
     const validation = validateKnowledgeSource(draft, {
       existingCount: existing.length,
       existingCharacterCount: existing.reduce((total, source) => total + source.content.length, 0),
@@ -74,8 +91,9 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
       return;
     }
     const next = editingId
-      ? sources.map((source) => source.id === editingId ? { ...validation.value, id: source.id } : source)
-      : [...sources, { ...validation.value, id: `mock-source-${++sourceSequence.current}` }];
+      ? currentSources.map((source) => source.id === editingId ? { ...validation.value, id: source.id } : source)
+      : [...currentSources, { ...validation.value, id: `mock-source-${++sourceSequence.current}` }];
+    sourcesRef.current = next;
     setSources(next);
     setDraft(emptyDraft);
     setEditingId(null);
@@ -93,7 +111,9 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
   }
 
   function removeSource(sourceId: string) {
-    setSources((current) => current.filter((source) => source.id !== sourceId));
+    const next = sourcesRef.current.filter((source) => source.id !== sourceId);
+    sourcesRef.current = next;
+    setSources(next);
     if (editingId === sourceId) {
       setEditingId(null);
       setDraft(emptyDraft);
@@ -110,15 +130,21 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
       setError("A current server-approved simulation preflight is required before reading a mock file.");
       return;
     }
-    if (!isSupportedKnowledgeFile(file)) {
-      setError("Only local .txt or .md mock files are supported. Files are never uploaded.");
+    const fileError = validateKnowledgeFile(file);
+    if (fileError) {
+      setError(fileError);
       return;
     }
+    const readToken = fileReadGate.current.begin();
+    const requestedSession = sessionKey;
     try {
       const content = await file.text();
+      const currentSession = sessionRef.current;
+      if (!mountedRef.current || !fileReadGate.current.isCurrent(readToken) || !currentSession.authorized || currentSession.busy || currentSession.sessionKey !== requestedSession) return;
+      const currentSources = sourcesRef.current;
       const validation = validateKnowledgeSource(
         { title: file.name.replace(/\.(txt|md|markdown)$/i, "") || file.name, content },
-        { existingCount: sources.length, existingCharacterCount: sources.reduce((total, source) => total + source.content.length, 0) },
+        { existingCount: currentSources.length, existingCharacterCount: currentSources.reduce((total, source) => total + source.content.length, 0) },
       );
       if (!validation.ok) {
         setError(validation.error);
@@ -130,6 +156,8 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
       setError("");
       setNotice("Local file read into the draft only. Review and save it; no upload occurred.");
     } catch {
+      const currentSession = sessionRef.current;
+      if (!mountedRef.current || !fileReadGate.current.isCurrent(readToken) || !currentSession.authorized || currentSession.busy || currentSession.sessionKey !== requestedSession) return;
       setError("The local mock file could not be read.");
     }
   }
@@ -154,7 +182,7 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
   return <section className="card" aria-labelledby="knowledge-lab-title" style={{ marginTop: 18 }}>
     <div className="eyebrow">Simulation only · browser memory</div>
     <h3 id="knowledge-lab-title">Knowledge Lab</h3>
-    <p className="muted">Paste fictional notes or select a local text/Markdown file to preview deterministic, extractive source excerpts. Nothing is uploaded, persisted, logged, added to analytics, or sent to a provider. This is not semantic search or an AI answer.</p>
+    <p className="muted">Paste fictional notes or select a local text/Markdown file to preview deterministic, extractive source excerpts. Nothing is uploaded, persisted, logged, added to analytics, or sent to a provider. This is not semantic search or an AI answer. Sources and questions are not exported; an excerpt appears in a separately reviewed transcript only if you explicitly copy it into the mock message and run a turn.</p>
     {!authorized && <p role="status" className="muted">Run a server-approved simulation preflight before adding or retrieving mock sources. Reset, authorization denial, and agent changes clear this panel.</p>}
     {authorized && <>
       {busy && <p role="status" className="muted">Authorization is being revalidated. Mock source actions are temporarily disabled.</p>}

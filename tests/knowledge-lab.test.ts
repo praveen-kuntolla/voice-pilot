@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_KNOWLEDGE_SOURCES,
+  MAX_KNOWLEDGE_FILE_BYTES,
   MAX_SOURCE_CHARACTERS,
   MAX_TOTAL_SOURCE_CHARACTERS,
   NO_MATCHING_EXCERPT,
+  KnowledgeFileReadGate,
   isSupportedKnowledgeFile,
   retrieveKnowledgeExcerpts,
   splitKnowledgePassages,
   validateKnowledgeQuestion,
+  validateKnowledgeFile,
   validateKnowledgeSource,
   type KnowledgeSource,
 } from "@/lib/knowledge-lab";
@@ -38,6 +41,26 @@ describe("offline Knowledge Lab source validation", () => {
     expect(isSupportedKnowledgeFile({ name: "fictional.md", type: "text/plain" } as File)).toBe(true);
     expect(isSupportedKnowledgeFile({ name: "fictional.txt", type: "" } as File)).toBe(true);
     expect(isSupportedKnowledgeFile({ name: "fictional.pdf", type: "application/pdf" } as File)).toBe(false);
+    expect(isSupportedKnowledgeFile({ name: "misleading.pdf", type: "text/plain" } as File)).toBe(false);
+    expect(validateKnowledgeFile({ name: "too-large.md", type: "text/markdown", size: MAX_KNOWLEDGE_FILE_BYTES + 1 } as File)).toContain("bytes");
+    expect(validateKnowledgeFile({ name: "fictional.md", type: "text/markdown", size: 42 } as File)).toBeNull();
+  });
+
+  it("rejects delayed local file reads after session invalidation, then permits a fresh session read", async () => {
+    const gate = new KnowledgeFileReadGate();
+    let resolveOld!: (value: string) => void;
+    const delayedOld = new Promise<string>((resolve) => { resolveOld = resolve; });
+    let draft = "";
+    const oldToken = gate.begin();
+    const oldRead = delayedOld.then((content) => { if (gate.isCurrent(oldToken)) draft = content; });
+    gate.invalidate(); // Simulates reset, denial, agent switch, or unmount before File.text() resolves.
+    resolveOld("stale mock source");
+    await oldRead;
+    expect(draft).toBe("");
+
+    const nextToken = gate.begin();
+    await Promise.resolve("fresh authorized source").then((content) => { if (gate.isCurrent(nextToken)) draft = content; });
+    expect(draft).toBe("fresh authorized source");
   });
 });
 
