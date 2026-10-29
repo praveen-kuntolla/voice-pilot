@@ -1,9 +1,12 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createDisposableLocalGatewayPool, PostgresTransactionExecutor } from "@/lib/postgres-transaction-executor";
 import { PostgresPolicyRepository } from "@/lib/postgres-policy-repository";
 import { prepareOfflineProviderAction } from "@/lib/privileged-safety-gateway";
+import { OperationalMaintenanceRunner } from "@/lib/operational-maintenance";
+import { PostgresDurableSafetyStore } from "@/lib/postgres-durable-safety";
+import { PostgresGatewayEventSink } from "@/lib/gateway-audit";
 
-const required = ["GATEWAY_DATABASE_URL", "GATEWAY_ACTOR_ID", "GATEWAY_ORG_ID", "GATEWAY_OTHER_ORG_ID", "GATEWAY_CAMPAIGN_ID", "GATEWAY_AGENT_ID", "GATEWAY_CONTACT_ID"] as const;
+const required = ["GATEWAY_DATABASE_URL","GATEWAY_DATABASE_NAME", "GATEWAY_ACTOR_ID", "GATEWAY_ORG_ID", "GATEWAY_OTHER_ORG_ID", "GATEWAY_CAMPAIGN_ID", "GATEWAY_AGENT_ID", "GATEWAY_CONTACT_ID"] as const;
 const configured = required.every((name) => Boolean(process.env[name]));
 
 describe.skipIf(!configured)("disposable PostgreSQL production-gateway foundation", () => {
@@ -19,6 +22,17 @@ describe.skipIf(!configured)("disposable PostgreSQL production-gateway foundatio
   const prepare = (idempotencyKey: string, input = base) => prepareOfflineProviderAction({ identity, executor, createPolicyRepository: (query) => new PostgresPolicyRepository(query), now: Date.now, reservationTtlMs: 60_000 }, { ...input, idempotencyKey });
 
   afterAll(async () => { await pool.end(); });
+  beforeEach(async () => {
+    await pool.query("update voicepilot_test.audit_fault set should_fail=false where id=true");
+    await pool.query("update voicepilot_safety.provider_usage_accounts set reserved_cents=0,used_cents=0 where organization_id=$1", [org]);
+    await pool.query("delete from public.provider_action_reservations where organization_id=$1", [org]);
+    await pool.query("delete from voicepilot_safety.provider_usage_reservations where organization_id=$1", [org]);
+    await pool.query("delete from public.provider_replay_claims where organization_id=$1", [org]);
+    await pool.query("delete from voicepilot_safety.provider_rate_windows where organization_id=$1", [org]);
+    await pool.query("delete from voicepilot_safety.provider_retry_attempts where organization_id=$1", [org]);
+    await pool.query("delete from voicepilot_safety.provider_retry_ledger where organization_id=$1", [org]);
+    await pool.query("delete from voicepilot_safety.provider_retry_counters where organization_id=$1", [org]);
+  });
 
   it("atomically admits only one action at concurrency one and reserves its budget", async () => {
     const client = await pool.connect();
@@ -34,9 +48,91 @@ describe.skipIf(!configured)("disposable PostgreSQL production-gateway foundatio
     expect(results.filter((result) => result.status === "safety_blocked")).toHaveLength(1);
     const row = await pool.query("select count(*)::int actions,(select count(*)::int from voicepilot_safety.provider_usage_reservations where status='active') usage from public.provider_action_reservations where status='active'");
     expect(row.rows[0]).toEqual({ actions: 1, usage: 1 });
+    const attempts=await pool.query("select count(*)::int attempts from voicepilot_safety.provider_retry_attempts");
+    expect(attempts.rows[0].attempts).toBe(1);
+  });
+
+  it("reconciles and removes expired synthetic retry state idempotently",async()=>{
+    await expect(prepare("maintenance-seed")).resolves.toMatchObject({ status: "success" });
+    await pool.query("update voicepilot_safety.provider_retry_attempts set expires_at=clock_timestamp()-interval '1 second' where organization_id=$1",[org]);
+    const first=await executor.transaction(async(query)=>new OperationalMaintenanceRunner(query,process.env.GATEWAY_DATABASE_NAME!,"trusted-global").run({organizationId:org,before:Date.now(),retentionBefore:Date.now()-86_400_000,batchSize:100}));
+    expect(first.retriesReconciled).toBe(1);
+    await pool.query("update voicepilot_safety.provider_retry_attempts set finished_at=clock_timestamp()-interval '2 days' where organization_id=$1",[org]);
+    const second=await executor.transaction(async(query)=>new OperationalMaintenanceRunner(query,process.env.GATEWAY_DATABASE_NAME!,"trusted-global").run({organizationId:org,before:Date.now(),retentionBefore:Date.now()-86_400_000,batchSize:100}));
+    expect(second.retriesRemoved).toBe(1);
+    const third=await executor.transaction(async(query)=>new OperationalMaintenanceRunner(query,process.env.GATEWAY_DATABASE_NAME!,"trusted-global").run({organizationId:org,before:Date.now(),retentionBefore:Date.now()-86_400_000,batchSize:100}));
+    expect(third.retriesReconciled+third.retriesRemoved).toBe(0);
+  });
+
+  it("serializes duplicate retries and enforces the authoritative attempt maximum",async()=>{
+    const expiresAt=Date.now()+120_000;
+    const reserve=(key:string,attemptKind:"original"|"retry")=>executor.transaction(async(query)=>{await query("select set_config('request.jwt.claim.sub',$1,true),set_config('voicepilot.organization_id',$2,true)",[actor,org]);return new PostgresDurableSafetyStore(query).reserveRetryAttempt({organizationId:org,campaignId:base.campaignId,contactId:base.contactId,agentId:base.agentId,provider:"openai",idempotencyKey:key,attemptKind,maxAttempts:3,expiresAt},Date.now())});
+    const duplicate=await Promise.all([reserve("duplicate-retry","original"),reserve("duplicate-retry","original")]);
+    expect(duplicate.every((result)=>result.ok)).toBe(true);
+    expect(duplicate.filter((result)=>result.ok&&result.reused)).toHaveLength(1);
+    const duplicateId=duplicate.find((result)=>result.ok)?.attemptId!;
+    const matching=await pool.query("select id,attempt_id from voicepilot_safety.provider_retry_attempts a join voicepilot_safety.provider_retry_ledger l using(organization_id,idempotency_key) where a.id=$1",[duplicateId]);
+    expect(matching.rows[0].id).toBe(matching.rows[0].attempt_id);
+    await expect(reserve("retry-blocked","retry")).resolves.toMatchObject({ok:false,error:"conflict"});
+    await pool.query("select voicepilot_safety.finish_retry_attempt($1::uuid,$2::uuid,'failed')",[org,duplicateId]);
+    const competing=await Promise.all([reserve("retry-two","retry"),reserve("retry-three","retry"),reserve("retry-four","retry")]);
+    expect(competing.filter((result)=>result.ok)).toHaveLength(1);
+    expect(competing.filter((result)=>!result.ok&&result.error==="conflict")).toHaveLength(2);
+    const winner=competing.find((result)=>result.ok)!;
+    await pool.query("select voicepilot_safety.finish_retry_attempt($1::uuid,$2::uuid,'failed')",[org,winner.attemptId]);
+    const third=await reserve("retry-final","retry");
+    expect(third).toMatchObject({ok:true,attemptNumber:3});
+    if (!third.ok) throw new Error("expected third retry reservation");
+    await pool.query("select voicepilot_safety.finish_retry_attempt($1::uuid,$2::uuid,'failed')",[org,third.attemptId]);
+    await expect(reserve("retry-exhausted","retry")).resolves.toMatchObject({ok:false,error:"retry_limit"});
+    const count=await pool.query("select count(*)::int count from voicepilot_safety.provider_retry_attempts where organization_id=$1",[org]);
+    expect(count.rows[0].count).toBe(3);
+  });
+
+  it("does not permit a new retry after successful completion", async () => {
+    const original = await executor.transaction(async (query) => {
+      await query("select set_config('request.jwt.claim.sub',$1,true),set_config('voicepilot.organization_id',$2,true)",[actor,org]);
+      return new PostgresDurableSafetyStore(query).reserveRetryAttempt({organizationId:org,campaignId:base.campaignId,contactId:base.contactId,agentId:base.agentId,provider:"openai",idempotencyKey:"completed-original",attemptKind:"original",maxAttempts:3,expiresAt:Date.now()+120_000},Date.now());
+    });
+    expect(original.ok).toBe(true);
+    if (!original.ok) throw new Error("expected original reservation");
+    await pool.query("select voicepilot_safety.finish_retry_attempt($1::uuid,$2::uuid,'completed')",[org,original.attemptId]);
+    await expect(executor.transaction(async (query) => {
+      await query("select set_config('request.jwt.claim.sub',$1,true),set_config('voicepilot.organization_id',$2,true)",[actor,org]);
+      return new PostgresDurableSafetyStore(query).reserveRetryAttempt({organizationId:org,campaignId:base.campaignId,contactId:base.contactId,agentId:base.agentId,provider:"openai",idempotencyKey:"completed-retry",attemptKind:"retry",maxAttempts:3,expiresAt:Date.now()+120_000},Date.now());
+    })).resolves.toMatchObject({ok:false,error:"retry_limit"});
+  });
+
+  it("rolls back every preparation claim when the final audit insert fails", async () => {
+    await pool.query("update voicepilot_test.audit_fault set should_fail=true where id=true");
+    const failed = await prepare("audit-fault-rollback");
+    expect(failed).toMatchObject({status:"unavailable"});
+    const state = await pool.query(`select
+      (select count(*)::int from voicepilot_safety.provider_retry_attempts where organization_id=$1 and idempotency_key=$2) attempts,
+      (select count(*)::int from voicepilot_safety.provider_retry_ledger where organization_id=$1 and idempotency_key=$2) ledger,
+      (select count(*)::int from voicepilot_safety.provider_retry_counters where organization_id=$1 and campaign_id=$3 and contact_id=$4 and provider='openai') counters,
+      (select count(*)::int from public.provider_action_reservations where organization_id=$1 and idempotency_key=$2) actions,
+      (select count(*)::int from public.provider_replay_claims where organization_id=$1 and event_id=$5) replay,
+      (select count(*)::int from voicepilot_safety.provider_usage_reservations where organization_id=$1 and idempotency_key=$2) usage_reservations,
+      (select count(*)::int from voicepilot_safety.provider_rate_windows where organization_id=$1 and provider='openai') rate_windows,
+      (select reserved_cents::int from voicepilot_safety.provider_usage_accounts where organization_id=$1) reserved_cents,
+      (select used_cents::int from voicepilot_safety.provider_usage_accounts where organization_id=$1) used_cents`,
+      [org,"audit-fault-rollback",base.campaignId,base.contactId,"action:audit-fault-rollback"]);
+    expect(state.rows[0]).toEqual({attempts:0,ledger:0,counters:0,actions:0,replay:0,usage_reservations:0,rate_windows:0,reserved_cents:0,used_cents:0});
+    await pool.query("update voicepilot_test.audit_fault set should_fail=false where id=true");
+    await expect(prepare("audit-fault-rollback")).resolves.toMatchObject({status:"success"});
+    const evidence = await pool.query("select count(*)::int count from voicepilot_safety.gateway_audit_events where organization_id=$1 and correlation_id=$2 and event_type='preparation_committed'",[org,"audit-fault-rollback"]);
+    expect(evidence.rows[0].count).toBe(1);
+  });
+
+  it("persists tenant-bound audit events and rejects cross-tenant attribution",async()=>{
+    await executor.transaction(async(query)=>{await query("select set_config('voicepilot.organization_id',$1,true)",[org]);await new PostgresGatewayEventSink(query).emit({type:"retry_limit_exhausted",correlationId:"integration-alert",organizationId:org,reason:"retry_limit",occurredAt:Date.now()});});
+    const count=await pool.query("select count(*)::int count from voicepilot_safety.gateway_audit_events where organization_id=$1 and correlation_id='integration-alert'",[org]);expect(count.rows[0].count).toBe(1);
+    await expect(executor.transaction(async(query)=>{await query("select set_config('voicepilot.organization_id',$1,true)",[org]);await new PostgresGatewayEventSink(query).emit({type:"authorization_denied",correlationId:"cross-tenant",organizationId:process.env.GATEWAY_OTHER_ORG_ID!,reason:"tenant_mismatch",occurredAt:Date.now()});})).rejects.toThrow("gateway_unavailable");
   });
 
   it("rejects duplicate, cross-tenant and removed-membership requests", async () => {
+    await expect(prepare("race-a")).resolves.toMatchObject({ status: "success" });
     await expect(prepare("race-a")).resolves.toMatchObject({ status: "safety_blocked" });
     await expect(prepare("other-org", { ...base, organizationId: process.env.GATEWAY_OTHER_ORG_ID! })).resolves.toMatchObject({ status: "denied" });
     await pool.query("delete from public.organization_members where organization_id=$1 and user_id=$2", [org, actor]);

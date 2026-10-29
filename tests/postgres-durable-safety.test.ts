@@ -22,6 +22,7 @@ describe("server-only PostgreSQL safety adapter", () => {
     expect(await store.reserve(request, 1)).toEqual({ ok: false, error: "unavailable" });
     expect(await store.recordUsage({ organizationId: org, idempotencyKey: "u", amountCents: 1, budgetCents: 2 }, 1)).toEqual({ ok: false, error: "unavailable" });
     expect(await store.reserveUsage({ organizationId: org, idempotencyKey: "u", amountCents: 1, budgetCents: 2, expiresAt: 4_000 }, 1)).toEqual({ ok: false, error: "unavailable" });
+    expect(await store.reserveRetryAttempt({ organizationId:org,campaignId:"22222222-2222-4222-8222-222222222222",contactId:"33333333-3333-4333-8333-333333333333",agentId:"44444444-4444-4444-8444-444444444444",provider:"mock",idempotencyKey:"retry",attemptKind:"retry",maxAttempts:2,expiresAt:4_000 },1)).toEqual({ok:false,error:"unavailable"});
   });
   it("returns explicit true and false control values and treats absent rows as unavailable", async () => {
     const query = vi.fn()

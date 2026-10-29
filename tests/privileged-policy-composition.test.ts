@@ -7,13 +7,14 @@ import { MemoryGatewayEventSink } from "@/lib/gateway-observability";
 
 const actor = "11111111-1111-4111-8111-111111111111";
 const org = "22222222-2222-4222-8222-222222222222";
+const campaign="55555555-5555-4555-8555-555555555555",agent="66666666-6666-4666-8666-666666666666",contact="77777777-7777-4777-8777-777777777777";
 const now = Date.UTC(2026, 0, 5, 12);
-const input = { kind: "reserve" as const, organizationId: org, campaignId: "campaign", agentId: "agent", contactId: "contact", idempotencyKey: "action-one" };
+const input = { kind: "reserve" as const, organizationId: org, campaignId: campaign, agentId: agent, contactId: contact, idempotencyKey: "action-one" };
 const context: AuthoritativePolicyContext = {
   organizationId: org,
-  campaign: { id: "campaign", organization_id: org, agent_id: "agent", status: "draft", consent_required: true },
-  contact: { id: "contact", name: "Synthetic", organization_id: org, consent_status: "granted", opted_out_at: null },
-  agent: { id: "agent", organization_id: org, enabled: true },
+  campaign: { id: campaign, organization_id: org, agent_id: agent, status: "draft", consent_required: true },
+  contact: { id: contact, name: "Synthetic", organization_id: org, consent_status: "granted", opted_out_at: null },
+  agent: { id: agent, organization_id: org, enabled: true },
   provider: "offline",
   limits: { maxConcurrent: 2, currentConcurrent: 0, maxAttempts: 2, attempt: 0, maxSpendCents: 100, spentCents: 0, emergencyStop: false },
   callingHours: { timeZone: "UTC", startHour: 9, endHour: 17 },
@@ -33,8 +34,10 @@ function harness(overrides: Partial<AuthoritativePolicyContext> = {}, options: {
     if (sql.includes("provider_global_stop") || sql.includes("provider_safety_controls")) return { rows: [{ emergency_stop: false }] };
     if (sql.includes("claim_replay")) return { rows: [{ result: options.replay ?? true }] };
     if (sql.includes("reserve_action")) return { rows: [{ result: { ok: true, reservationId: "33333333-3333-4333-8333-333333333333", reused: false } }] };
+    if (sql.includes("reserve_retry_attempt")) return { rows: [{ result: { ok: true, attemptId: "44444444-4444-4444-8444-444444444444", attemptNumber: 1, reused: false } }] };
     if (sql.includes("reserve_usage")) return { rows: [{ result: { ok: true, reused: false } }] };
     if (sql.includes("record_usage")) return { rows: [{ result: { ok: true, recorded: true, totalCents: 10 } }] };
+    if (sql.includes("record_gateway_event")) return { rows: [{ result: true }] };
     return { rows: [{}] };
   }) as unknown as SafetyQuery;
   const repository: PolicyContextRepository = { load: async () => ({ ...context, ...overrides }), claimRateLimit: async () => true };
@@ -82,6 +85,8 @@ describe("privileged provider-action composition", () => {
     expect(JSON.stringify(observer.events)).not.toContain("private-key");
   });
 
+  it("fails closed when a safety-critical denial audit cannot be recorded",async()=>{const duplicate=harness({}, {replay:false});await expect(prepareOfflineProviderAction({...duplicate.deps,observer:{emit:async()=>{throw new Error("sink offline");}}},input)).rejects.toThrow("sink offline");});
+
   it("uses trusted time and authoritative limits for offline preparation without dispatching an external job", async () => {
     const { calls, deps } = harness();
     const result = await prepareOfflineProviderAction(deps, input);
@@ -98,5 +103,15 @@ describe("privileged provider-action composition", () => {
     expect(usage.calls.some((sql) => sql.includes("record_usage"))).toBe(true);
     const failed = harness({}, { failTransaction: true });
     await expect(prepareOfflineProviderAction(failed.deps, input)).resolves.toEqual({ status: "unavailable", reason: "transaction_failed" });
+  });
+  it("requires the successful preparation audit inside the transaction", async () => {
+    const { deps } = harness();
+    const failingAudit = { ...deps, createPolicyRepository: deps.createPolicyRepository };
+    const original = failingAudit.executor;
+    failingAudit.executor = { transaction: async (work) => original.transaction(async (query) => {
+      const wrapped = (async (sql: string, values: readonly unknown[]) => { if (sql.includes("record_gateway_event")) throw new Error("audit unavailable"); return query(sql, values); }) as SafetyQuery;
+      return work(wrapped);
+    }) };
+    await expect(prepareOfflineProviderAction(failingAudit, input)).resolves.toEqual({ status: "unavailable", reason: "transaction_failed" });
   });
 });

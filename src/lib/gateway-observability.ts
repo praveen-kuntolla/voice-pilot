@@ -9,7 +9,13 @@ export type GatewayEventType =
   | "transaction_failed"
   | "transaction_rolled_back"
   | "pool_failed"
-  | "cleanup_lag";
+  | "cleanup_lag"
+  | "retry_limit_exhausted"
+  | "idempotency_conflict"
+  | "unsafe_pool_discard"
+  | "reconciliation_failed"
+  | "credential_rotation_failed"
+  | "preparation_committed";
 
 export type GatewaySecurityEvent = {
   type: GatewayEventType;
