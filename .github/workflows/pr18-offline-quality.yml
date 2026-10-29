@@ -1,0 +1,40 @@
+name: VoicePilot PR18 offline quality
+
+on:
+  push:
+    branches:
+      - feature/authenticated-calls-analytics
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: TypeScript, lint, Vitest and build (no providers)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:55421"
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "offline-ci-placeholder-not-a-secret"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: TypeScript
+        run: npm run typecheck
+      - name: ESLint
+        run: npm run lint
+      - name: Unit and integration tests without external fixtures
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Whitespace and diff check
+        run: git diff --check
