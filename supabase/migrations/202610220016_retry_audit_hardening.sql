@@ -1,0 +1,84 @@
+-- REVIEW ONLY. Do not apply to established databases. Apply only after an
+-- explicitly approved disposable-database test plan.
+-- This ledger is retained when attempt rows are cleaned up; it is the
+-- authoritative monotonic/idempotency record for retry eligibility.
+create table if not exists voicepilot_safety.provider_retry_ledger(
+  attempt_id uuid not null,
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  agent_id uuid not null references public.agents(id) on delete cascade,
+  provider text not null,
+  idempotency_key text not null,
+  attempt_number integer not null check(attempt_number between 1 and 10),
+  attempt_kind text not null check(attempt_kind in ('original','retry')),
+  state text not null check(state in ('reserved','completed','failed','cancelled','expired')),
+  created_at timestamptz not null default clock_timestamp(),
+  finished_at timestamptz,
+  primary key (organization_id,idempotency_key),
+  unique (organization_id,campaign_id,contact_id,provider,attempt_number)
+);
+create table if not exists voicepilot_safety.provider_retry_counters(
+  organization_id uuid not null references public.organizations(id) on delete cascade,
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  contact_id uuid not null references public.contacts(id) on delete cascade,
+  provider text not null,
+  last_attempt_number integer not null default 0 check(last_attempt_number between 0 and 10),
+  primary key (organization_id,campaign_id,contact_id,provider)
+);
+alter table voicepilot_safety.provider_retry_ledger enable row level security;
+alter table voicepilot_safety.provider_retry_counters enable row level security;
+revoke all on voicepilot_safety.provider_retry_ledger,voicepilot_safety.provider_retry_counters from public,anon,authenticated;
+grant select on voicepilot_safety.provider_retry_ledger,voicepilot_safety.provider_retry_counters to service_role;
+
+create or replace function voicepilot_safety.reserve_retry_attempt(
+  p_org uuid,p_campaign uuid,p_contact uuid,p_agent uuid,p_provider text,p_key text,p_kind text,p_max integer,p_expires timestamptz
+) returns jsonb language plpgsql security definer set search_path=pg_catalog as $$
+declare prior voicepilot_safety.provider_retry_ledger%rowtype; last_number integer; new_number integer; new_id uuid;
+begin
+  if p_org is null or p_campaign is null or p_contact is null or p_agent is null or p_provider is null or length(trim(p_provider)) not between 1 and 80
+    or p_key is null or length(trim(p_key)) not between 1 and 256 or p_kind not in ('original','retry') or p_max not between 1 and 10
+    or p_expires is null or p_expires <= clock_timestamp() then return jsonb_build_object('ok',false,'error','invalid'); end if;
+  if not voicepilot_safety.safety_enabled(p_org) then return jsonb_build_object('ok',false,'error','unavailable_or_stopped'); end if;
+  perform pg_advisory_xact_lock(hashtextextended('retry:'||p_org::text||':'||p_campaign::text||':'||p_contact::text||':'||p_provider,0));
+  select * into prior from voicepilot_safety.provider_retry_ledger where organization_id=p_org and idempotency_key=p_key;
+  if found then
+    if prior.campaign_id<>p_campaign or prior.contact_id<>p_contact or prior.agent_id<>p_agent or prior.provider<>p_provider or prior.attempt_kind<>p_kind then return jsonb_build_object('ok',false,'error','conflict'); end if;
+    return jsonb_build_object('ok',true,'attemptId',prior.attempt_id,'attemptNumber',prior.attempt_number,'reused',true);
+  end if;
+  select last_attempt_number into last_number from voicepilot_safety.provider_retry_counters where organization_id=p_org and campaign_id=p_campaign and contact_id=p_contact and provider=p_provider for update;
+  last_number:=coalesce(last_number,0);
+  if (last_number=0 and p_kind<>'original') or (last_number>0 and p_kind<>'retry') or last_number>=p_max then return jsonb_build_object('ok',false,'error','retry_limit'); end if;
+  if p_kind='retry' and exists(select 1 from voicepilot_safety.provider_retry_ledger where organization_id=p_org and campaign_id=p_campaign and contact_id=p_contact and provider=p_provider and state='reserved') then return jsonb_build_object('ok',false,'error','conflict'); end if;
+  if not exists(select 1 from voicepilot_safety.provider_action_policies where organization_id=p_org and campaign_id=p_campaign and agent_id=p_agent and provider=p_provider and enabled=true and max_attempts=p_max)
+    or not exists(select 1 from public.contacts where id=p_contact and organization_id=p_org and consent_status='granted' and opted_out_at is null) then return jsonb_build_object('ok',false,'error','policy_changed'); end if;
+  new_number:=last_number+1;
+  insert into voicepilot_safety.provider_retry_counters(organization_id,campaign_id,contact_id,provider,last_attempt_number) values(p_org,p_campaign,p_contact,p_provider,new_number)
+    on conflict (organization_id,campaign_id,contact_id,provider) do update set last_attempt_number=excluded.last_attempt_number;
+  new_id:=gen_random_uuid();
+  insert into voicepilot_safety.provider_retry_ledger(attempt_id,organization_id,campaign_id,contact_id,agent_id,provider,idempotency_key,attempt_number,attempt_kind,state)
+    values(new_id,p_org,p_campaign,p_contact,p_agent,p_provider,p_key,new_number,p_kind,'reserved');
+  insert into voicepilot_safety.provider_retry_attempts(organization_id,campaign_id,contact_id,agent_id,provider,idempotency_key,attempt_number,attempt_kind,expires_at)
+    values(p_org,p_campaign,p_contact,p_agent,p_provider,p_key,new_number,p_kind,p_expires);
+  insert into voicepilot_safety.provider_safety_audit(organization_id,action,detail) values(p_org,'retry_attempt_reserved',jsonb_build_object('attemptId',new_id,'attemptNumber',new_number,'kind',p_kind));
+  return jsonb_build_object('ok',true,'attemptId',new_id,'attemptNumber',new_number,'reused',false);
+end $$;
+
+create or replace function voicepilot_safety.finish_retry_attempt(p_org uuid,p_id uuid,p_state text) returns boolean
+language plpgsql security definer set search_path=pg_catalog as $$
+declare n integer;
+begin
+  if p_org is null or p_id is null or p_state not in ('completed','failed','cancelled') then return false; end if;
+  update voicepilot_safety.provider_retry_attempts set state=p_state,finished_at=clock_timestamp() where organization_id=p_org and id=p_id and state='reserved';
+  get diagnostics n=row_count;
+  if n=1 then update voicepilot_safety.provider_retry_ledger l set state=p_state,finished_at=clock_timestamp() where organization_id=p_org and idempotency_key=(select idempotency_key from voicepilot_safety.provider_retry_attempts where id=p_id); end if;
+  if n=1 then insert into voicepilot_safety.provider_safety_audit(organization_id,action,detail) values(p_org,'retry_attempt_finished',jsonb_build_object('attemptId',p_id,'state',p_state)); end if;
+  return n=1;
+end $$;
+
+revoke all on all functions in schema voicepilot_safety from public,anon,authenticated;
+grant execute on all functions in schema voicepilot_safety to service_role;
+
+-- Trusted global maintenance requires a separately authorized identity,
+-- distributed locking and cleanup. The application runner must not be treated
+-- as proof of database identity merely because its database name is disposable.

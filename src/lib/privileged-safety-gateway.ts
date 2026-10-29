@@ -4,6 +4,7 @@ import type { ReservationRequest, UsageRequest } from "@/lib/durable-safety";
 import { authorizeProviderAction, type PolicyContextRepository } from "@/lib/policy-enforcement-gateway";
 import { GatewayTransactionAbort } from "@/lib/gateway-transaction-abort";
 import { createGatewayEvent, type GatewayEventSink, type GatewayEventType } from "@/lib/gateway-observability";
+import { PostgresGatewayEventSink } from "@/lib/gateway-audit";
 
 if (typeof window !== "undefined") throw new Error("Privileged safety execution is server-only");
 
@@ -94,10 +95,12 @@ export async function prepareOfflineProviderAction(deps: {
         if (!result.ok) throw new GatewayTransactionAbort<PrivilegedSafetyFailure>({ status: result.error === "concurrency_limit" || result.error === "emergency_stop" ? "safety_blocked" : "unavailable", reason: result.error });
         const usage = await store.reserveUsage({ organizationId: decision.organizationId, idempotencyKey: decision.idempotencyKey, amountCents: decision.execution.amountCents, budgetCents: decision.execution.budgetCents, expiresAt }, evaluationTime);
         if (!usage.ok) throw new GatewayTransactionAbort<PrivilegedSafetyFailure>({ status: usage.error === "budget_exceeded" ? "safety_blocked" : "unavailable", reason: usage.error });
+        await new PostgresGatewayEventSink(query).emit({ type: "preparation_committed", correlationId: deps.correlationId ?? decision.idempotencyKey, organizationId: decision.organizationId, reason: "offline_reservation_prepared", occurredAt: evaluationTime });
         return { status: "success", value: { prepared: true, simulationOnly: true, attempt, reservation: result, usage } };
       }
       const result = await store.recordUsage({ organizationId: decision.organizationId, idempotencyKey: decision.idempotencyKey, amountCents: decision.execution.amountCents, budgetCents: decision.execution.budgetCents }, evaluationTime);
       if (!result.ok) throw new GatewayTransactionAbort<PrivilegedSafetyFailure>({ status: result.error === "budget_exceeded" || result.error === "emergency_stop" ? "safety_blocked" : "unavailable", reason: result.error });
+      await new PostgresGatewayEventSink(query).emit({ type: "preparation_committed", correlationId: deps.correlationId ?? decision.idempotencyKey, organizationId: decision.organizationId, reason: "offline_usage_recorded", occurredAt: evaluationTime });
       return { status: "success", value: { prepared: true, simulationOnly: true, usage: result } };
     });
   } catch (error) {

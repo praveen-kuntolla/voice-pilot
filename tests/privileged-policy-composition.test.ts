@@ -37,6 +37,7 @@ function harness(overrides: Partial<AuthoritativePolicyContext> = {}, options: {
     if (sql.includes("reserve_retry_attempt")) return { rows: [{ result: { ok: true, attemptId: "44444444-4444-4444-8444-444444444444", attemptNumber: 1, reused: false } }] };
     if (sql.includes("reserve_usage")) return { rows: [{ result: { ok: true, reused: false } }] };
     if (sql.includes("record_usage")) return { rows: [{ result: { ok: true, recorded: true, totalCents: 10 } }] };
+    if (sql.includes("record_gateway_event")) return { rows: [{ result: true }] };
     return { rows: [{}] };
   }) as unknown as SafetyQuery;
   const repository: PolicyContextRepository = { load: async () => ({ ...context, ...overrides }), claimRateLimit: async () => true };
@@ -102,5 +103,15 @@ describe("privileged provider-action composition", () => {
     expect(usage.calls.some((sql) => sql.includes("record_usage"))).toBe(true);
     const failed = harness({}, { failTransaction: true });
     await expect(prepareOfflineProviderAction(failed.deps, input)).resolves.toEqual({ status: "unavailable", reason: "transaction_failed" });
+  });
+  it("requires the successful preparation audit inside the transaction", async () => {
+    const { deps } = harness();
+    const failingAudit = { ...deps, createPolicyRepository: deps.createPolicyRepository };
+    const original = failingAudit.executor;
+    failingAudit.executor = { transaction: async (work) => original.transaction(async (query) => {
+      const wrapped = (async (sql: string, values: readonly unknown[]) => { if (sql.includes("record_gateway_event")) throw new Error("audit unavailable"); return query(sql, values); }) as SafetyQuery;
+      return work(wrapped);
+    }) };
+    await expect(prepareOfflineProviderAction(failingAudit, input)).resolves.toEqual({ status: "unavailable", reason: "transaction_failed" });
   });
 });

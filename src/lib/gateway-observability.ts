@@ -14,7 +14,8 @@ export type GatewayEventType =
   | "idempotency_conflict"
   | "unsafe_pool_discard"
   | "reconciliation_failed"
-  | "credential_rotation_failed";
+  | "credential_rotation_failed"
+  | "preparation_committed";
 
 export type GatewaySecurityEvent = {
   type: GatewayEventType;
