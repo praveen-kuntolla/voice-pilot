@@ -1,0 +1,112 @@
+name: VoicePilot PR20 offline quality
+
+on:
+  push:
+    branches:
+      - feature/phase-6-agent-test-studio
+  pull_request:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/pr20-offline-quality.yml"
+      - "src/app/dashboard/agents/test/**"
+      - "src/lib/voice-runtime.ts"
+      - "tests/**"
+      - "workers/voice-agent/**"
+      - "docs/phase-6-agent-test-studio-qa.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: TypeScript, ESLint, Vitest and build (offline)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:55421"
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "offline-ci-placeholder-not-a-secret"
+      VOICE_WORKER_ENABLED: "false"
+      VOICE_REALTIME_ENABLED: "false"
+      VOICE_OUTBOUND_ENABLED: "false"
+      VOICE_CONNECTIVITY_TEST_ENABLED: "false"
+      VOICE_PROVIDER_ACTIVATION_ENABLED: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: TypeScript
+        run: npm run typecheck
+      - name: ESLint
+        run: npm run lint
+      - name: Vitest (no external fixtures)
+        run: npm test
+      - name: Production build (nonfunctional loopback settings)
+        run: npm run build
+      - name: Diff whitespace check
+        run: git diff --check
+
+  preview-browser:
+    name: Developer preview Chromium (synthetic only)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:55421"
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "offline-ci-placeholder-not-a-secret"
+      VOICE_WORKER_ENABLED: "false"
+      VOICE_REALTIME_ENABLED: "false"
+      VOICE_OUTBOUND_ENABLED: "false"
+      VOICE_PROVIDER_ACTIVATION_ENABLED: "false"
+      DEVELOPER_PREVIEW_E2E: "1"
+      PLAYWRIGHT_BASE_URL: "http://127.0.0.1:3005"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install chromium
+      - name: Run synthetic developer-preview tests
+        run: npx playwright test tests/e2e/developer-preview.spec.ts --workers=1
+
+  python-offline:
+    name: Python worker tests (no connectivity)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: workers/voice-agent
+    env:
+      CI: "true"
+      VOICE_WORKER_ENABLED: "false"
+      VOICE_REALTIME_ENABLED: "false"
+      VOICE_OUTBOUND_ENABLED: "false"
+      VOICE_CONNECTIVITY_TEST_ENABLED: "false"
+      VOICE_PROVIDER_ACTIVATION_ENABLED: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install worker and pytest
+        run: python -m pip install -e ".[test]"
+      - name: Local Python tests (never launch worker)
+        run: python -m pytest -q
