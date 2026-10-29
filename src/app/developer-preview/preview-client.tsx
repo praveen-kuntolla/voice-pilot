@@ -98,7 +98,7 @@ export default function DeveloperPreview() {
     const payload = JSON.stringify({ label: "SIMULATION ONLY", agents, contacts, campaigns, logs, simulationCount }, null, 2);
     const url = URL.createObjectURL(new Blob([payload], { type: "application/json" }));
     const link = document.createElement("a"); link.href = url; link.download = "voicepilot-synthetic-preview.json"; link.click();
-    URL.revokeObjectURL(url); record("export", "Synthetic JSON report exported.");
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000); record("export", "Synthetic JSON report exported.");
   };
   const matches = (value: string) => value.toLowerCase().includes(query.toLowerCase());
   const visibleContacts = useMemo(() => contacts.filter(c => matches(c.name) && (filter === "all" || filter === c.consent)), [contacts, query, filter]);
