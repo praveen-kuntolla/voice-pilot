@@ -86,6 +86,19 @@ export function clearSyntheticActivity(organizationId: string) {
   }
 }
 
+/** Remove redacted synthetic tab data when signing out of the workspace. */
+export function clearAllSyntheticActivity() {
+  try {
+    for (let index = sessionStorage.length - 1; index >= 0; index--) {
+      const key = sessionStorage.key(index);
+      if (key?.startsWith("voicepilot:synthetic-outcomes:v1:")) sessionStorage.removeItem(key);
+    }
+    window.dispatchEvent(new Event(ACTIVITY_EVENT));
+  } catch {
+    // Browser storage access is best effort and contains no identifying data.
+  }
+}
+
 export function filterSyntheticActivity(
   records: readonly SyntheticActivity[],
   selection: { outcome?: string; days?: number },
