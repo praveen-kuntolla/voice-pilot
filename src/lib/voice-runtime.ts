@@ -15,19 +15,35 @@ export type RuntimeConfig=z.infer<typeof runtimeConfigSchema>;
 export type ConversationState="idle"|"listening"|"transcribing"|"thinking"|"speaking"|"interrupted"|"ending"|"ended"|"failed";
 export type VoiceEvent={sequence:number;state:ConversationState;kind:"state"|"partial_transcript"|"final_transcript"|"response_chunk"|"audio_chunk"|"diagnostic";text:string;turnId:number};
 export type SimulationMode="success"|"slow"|"error"|"empty";
+export const MAX_SIMULATION_TURNS=8;
+export const MAX_SIMULATION_INPUT_LENGTH=1000;
+export const simulationPresetIds=["new-inquiry","price-objection","callback-request","opt-out-request","mock-failure"] as const;
+export type SimulationPresetId=typeof simulationPresetIds[number];
+export type SimulationPreset={id:SimulationPresetId;label:string;description:string;turns:readonly string[];mode:SimulationMode};
+export const simulationPresets:readonly SimulationPreset[]=[
+  {id:"new-inquiry",label:"New product inquiry",description:"A synthetic customer asks about a product.",turns:["Hi, I would like to learn more about your product.","What would the next step look like?"],mode:"success"},
+  {id:"price-objection",label:"Price objection",description:"A synthetic customer raises a pricing concern.",turns:["I am interested, but the price is higher than I expected.","What options do I have?"],mode:"success"},
+  {id:"callback-request",label:"Callback request",description:"A synthetic customer asks to continue later.",turns:["Could someone call me back about this?","Tomorrow afternoon would work for a follow-up."],mode:"success"},
+  {id:"opt-out-request",label:"Opt-out request",description:"A synthetic customer asks not to be contacted.",turns:["Please do not contact me again."],mode:"success"},
+  {id:"mock-failure",label:"Provider failure",description:"A deterministic mock provider failure.",turns:["Run the failure path for this synthetic scenario."],mode:"error"},
+];
+export function getSimulationPreset(id:string){return simulationPresets.find((preset)=>preset.id===id);}
+export function validateSimulationInput(value:string){const text=value.trim();if(!text)return "Simulated speech is required";if(text.length>MAX_SIMULATION_INPUT_LENGTH)return `Simulated speech must be ${MAX_SIMULATION_INPUT_LENGTH} characters or fewer`;return null;}
 const delay=(milliseconds:number)=>new Promise<void>(resolve=>setTimeout(resolve,milliseconds));
 
 /** Local-only deterministic orchestrator. It neither captures audio nor calls a provider. */
 export class LocalConversationController {
   readonly events:VoiceEvent[]=[]; state:ConversationState="idle";
-  private sequence=0; private activeTurn=0; private ended=false;
-  constructor(readonly config:RuntimeConfig,private readonly maxEvents=200){}
+  private sequence=0; private activeTurn=0; private ended=false; private turnCountValue=0;
+  constructor(readonly config:RuntimeConfig,private readonly maxEvents=200,private readonly maxTurns=MAX_SIMULATION_TURNS){}
+  get turnCount(){return this.turnCountValue;}
+  get isTurnActive(){return ["listening","transcribing","thinking","speaking"].includes(this.state);}
   private emit(state:ConversationState,kind:VoiceEvent["kind"]="state",text="",turnId=this.activeTurn){this.state=state;const item={sequence:++this.sequence,state,kind,text,turnId};this.events.push(item);if(this.events.length>this.maxEvents)this.events.splice(0,this.events.length-this.maxEvents);return item}
   private current(turn:number){return !this.ended&&turn===this.activeTurn}
   async runSimulatedTurn(userText:string,mode:SimulationMode="success"):Promise<VoiceEvent[]>{
-    const text=userText.trim();if(!text)throw new Error("Simulated speech is required");if(this.ended)throw new Error("Session has ended");const turn=++this.activeTurn,start=this.events.length;
+    const text=userText.trim();const validation=validateSimulationInput(text);if(validation)throw new Error(validation);if(this.ended)throw new Error("Session has ended");if(this.isTurnActive)throw new Error("A simulated turn is already active");if(this.state==="failed")throw new Error("Reset the failed simulation before starting another turn");if(this.turnCountValue>=this.maxTurns)throw new Error(`Maximum of ${this.maxTurns} simulated turns reached`);const turn=++this.activeTurn;this.turnCountValue++;const start=this.events.length;
     this.emit("listening","state","Simulation listening — no live audio",turn);this.emit("transcribing","state","Mock STT started",turn);this.emit("transcribing","partial_transcript",text.slice(0,Math.max(1,Math.ceil(text.length/2))),turn);
-    if(mode==="slow")await delay(30);if(!this.current(turn))return this.events.slice(start);
+    if(mode==="slow")await delay(250);if(!this.current(turn))return this.events.slice(start);
     if(mode==="error"){this.emit("failed","diagnostic","Mock provider failure",turn);return this.events.slice(start)}
     if(mode==="empty"){this.emit("failed","diagnostic","Mock provider returned empty output",turn);return this.events.slice(start)}
     this.emit("thinking","final_transcript",text,turn);const response="Thanks for reaching out. This is a local mock response.";this.emit("thinking","response_chunk",response.slice(0,28),turn);if(!this.current(turn))return this.events.slice(start);
