@@ -43,6 +43,23 @@ try {
     insert into voicepilot_safety.provider_usage_accounts values('${org}',1000,0,0);
     insert into voicepilot_safety.provider_action_policies values('${org}','${campaign}','${agent}','openai',3,25,true,clock_timestamp());
   `);
+  psql(database, `
+    create schema voicepilot_test;
+    create table voicepilot_test.audit_fault(id boolean primary key default true, should_fail boolean not null default false);
+    insert into voicepilot_test.audit_fault(id,should_fail) values(true,false);
+    create or replace function voicepilot_test.fail_preparation_audit() returns trigger
+      language plpgsql security definer set search_path=pg_catalog,voicepilot_test as $$
+      begin
+        if new.event_type='preparation_committed' and exists(select 1 from voicepilot_test.audit_fault where id=true and should_fail=true) then
+          raise exception 'synthetic preparation audit failure';
+        end if;
+        return new;
+      end $$;
+    create trigger test_fail_preparation_audit before insert on voicepilot_safety.gateway_audit_events
+      for each row execute function voicepilot_test.fail_preparation_audit();
+    grant usage on schema voicepilot_test to service_role;
+    grant select,update on voicepilot_test.audit_fault to service_role;
+  `);
   psql("postgres",`create role ${oldRole} login password '${oldPassword}'; create role ${newRole} login password '${newPassword}'; grant service_role to ${oldRole},${newRole};`);rolesCreated=true;
   const connectAs=(role,password)=>run(["exec","-e",`PGPASSWORD=${password}`,container,"psql","-XAt","-h","127.0.0.1","-U",role,"-d",database,"-c","select current_user"]);
   if(connectAs(oldRole,oldPassword)!==oldRole||connectAs(newRole,newPassword)!==newRole)throw new Error("Synthetic credential transition failed");

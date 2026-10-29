@@ -49,6 +49,11 @@ begin
     if prior.campaign_id<>p_campaign or prior.contact_id<>p_contact or prior.agent_id<>p_agent or prior.provider<>p_provider or prior.attempt_kind<>p_kind then return jsonb_build_object('ok',false,'error','conflict'); end if;
     return jsonb_build_object('ok',true,'attemptId',prior.attempt_id,'attemptNumber',prior.attempt_number,'reused',true);
   end if;
+  -- A successfully completed business action is terminal. A new retry key
+  -- must never create another attempt after the ledger records completion.
+  if p_kind='retry' and exists(select 1 from voicepilot_safety.provider_retry_ledger where organization_id=p_org and campaign_id=p_campaign and contact_id=p_contact and provider=p_provider and state='completed') then
+    return jsonb_build_object('ok',false,'error','retry_limit');
+  end if;
   select last_attempt_number into last_number from voicepilot_safety.provider_retry_counters where organization_id=p_org and campaign_id=p_campaign and contact_id=p_contact and provider=p_provider for update;
   last_number:=coalesce(last_number,0);
   if (last_number=0 and p_kind<>'original') or (last_number>0 and p_kind<>'retry') or last_number>=p_max then return jsonb_build_object('ok',false,'error','retry_limit'); end if;
