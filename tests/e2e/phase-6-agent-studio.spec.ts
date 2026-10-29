@@ -153,4 +153,31 @@ test.describe("Phase 6 multi-turn Agent Test Studio", () => {
     await expect(page.getByRole("button", { name: "Preview TXT export" })).toHaveCount(0);
   });
 
+
+  test("unmount during a pending denied preflight cannot restore an old transcript", async ({ page }) => {
+    await login(page);
+    await page.goto("/dashboard/agents/test");
+    await page.getByLabel("Simulation agent").selectOption({ index: 1 });
+    await page.getByRole("button", { name: "Run simulation" }).click();
+    await expect(page.getByText(/Turns completed: 1/)).toBeVisible();
+
+    let release!: () => void;
+    let intercepted!: () => void;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const reached = new Promise<void>((resolve) => { intercepted = resolve; });
+    await page.route("**/api/agents/*/simulation-preflight", async (route) => {
+      intercepted();
+      await hold;
+      try { await route.fulfill({ status: 403, contentType: "application/json", body: '{"error":"Denied"}' }); } catch { /* Navigation aborts the old request. */ }
+    });
+    await page.getByRole("button", { name: "Run simulation" }).click();
+    await reached;
+    await page.goto("/dashboard");
+    release();
+    await page.goto("/dashboard/agents/test");
+    await expect(page.getByText("No simulated events yet.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Preview TXT export" })).toHaveCount(0);
+    await expect(page.locator("pre")).toHaveCount(0);
+  });
+
 });
