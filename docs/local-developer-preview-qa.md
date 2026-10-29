@@ -1,6 +1,6 @@
 # VoicePilot local developer preview and QA
 
-Status: **feature-branch implementation; browser suite not yet executed by this authoring environment**.
+Status: **feature-branch implementation. Existing developer-preview Playwright (3 passed) and isolated authenticated Playwright (17 passed, 3 skipped) are reported in `docs/qa/pr-17-developer-preview.md`. Subsequent sidebar navigation/auth fixes require a fresh local rerun.**
 
 ## Safety boundary
 
@@ -51,4 +51,18 @@ Report each page/control as **passed, failed, skipped or not implemented**, with
 
 ## Restrictions
 
-Do not use real credentials in test artifacts. Do not invoke real calls, messages, provider APIs, LiveKit, paid models or production billing. Do not apply review-only migrations 012–014 or access remote Supabase. Preserve local uncommitted files. No automatic merge or deployment.
+Do not use real credentials in test artifacts. Do not invoke real calls, messages, provider APIs, LiveKit, paid models or production billing. Do not apply review-only migrations 012–016 or access remote Supabase. Preserve local uncommitted files. No automatic merge or deployment.
+
+## Authenticated dashboard navigation hardening (pending rerun)
+
+The real dashboard sidebar now links only to implemented destinations:
+- Overview: `/dashboard`
+- Agents: `/dashboard/agents`
+- Contacts: `/dashboard/contacts`
+- Campaigns: `/dashboard/campaigns`
+- Call simulation and Simulation reports: `/dashboard/campaigns#simulation-studio`
+- Settings: `/settings` (authenticated)
+
+Standalone `/dashboard/calls` and `/dashboard/analytics` routes are **not implemented**; these names must not be represented as working full-featured pages. Simulated campaign reporting is available through the existing studio.
+
+New `tests/e2e/dashboard-navigation.spec.ts` checks guest redirection, authenticated sidebar links, settings navigation, provider governance visibility, and the simulation-studio link. Run it using the established safe isolated-auth E2E runner in production mode. **Do not mark these latest changes PASS until the new tests run locally.**
