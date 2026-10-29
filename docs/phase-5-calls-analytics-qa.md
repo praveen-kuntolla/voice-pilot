@@ -1,87 +1,93 @@
 # VoicePilot Phase 5 — authenticated Calls and Analytics QA
 
-Status: **local Windows acceptance reported complete at commit `57ce5c02cc68fe72dfa702ee5889a85550df5c45`; independent GitHub CI and integration against updated `master` remain pending**.
+Status: **integrated with merged `master`; local authenticated browser acceptance and independent Windows GitHub CI passed on 2026-10-29. Formal review and merge authorization remain pending.**
 
-## Dependencies and safety
+## Integration and safety
 
-- Branch: `feature/authenticated-calls-analytics`, created from PR #17 head `1e076908ce898b2890acbd9b4737be48e89ce556`.
-- Use a **stacked PR targeting `feature/local-developer-preview-qa`** so the diff excludes PR #17. PR #16 is merged. PR #17 remains open and is currently behind updated `master`; synchronize and retest PR #17, then review/merge it. Synchronize this branch with updated `master`, rerun acceptance, and only then retarget.
-- The established local database migration ledger stays **001–011**. Migrations **012–016 are review-only and must not run on established or remote databases**.
-- No provider connectivity or real calls, texts, STT, TTS, LLM, LiveKit, remote Supabase, billing, deployment, or external telemetry.
+- Branch: `feature/authenticated-calls-analytics`, targeting `master`.
+- PR #16 and PR #17 have merged into `master`. PR #18 was synchronized through commit `1fb93d78a6fb16ccc009ab91ad8b9670e22487cc`; latest application and offline-quality test commit before this documentation update: `7296d243d7680ef8faf8b0ea9102b4969814aece`.
+- The full integration tree preserves the original Phase 5 feature changes and the operational-safety changes introduced by PR #16. The PR was zero commits behind `master` at acceptance.
+- Established local database ledger stays **001–011**. Migrations **012–016 remain review-only** and must not run on established or remote databases.
+- **Never enable** real calls, provider connections, STT, TTS, LLM, LiveKit, messaging, billing, remote Supabase, deployment, or external telemetry as part of these acceptance tests.
 
 ## Implemented screens
 
 ### `/dashboard/calls`
 
-- Server checks Supabase user and current organization membership. Guests redirect to login; users without membership redirect to onboarding.
-- Shows current tab's redacted, **simulated terminal outcomes**: timestamp, terminal state, outcome category.
-- Date and outcome filters, outcome detail, JSON download (no contact IDs, phone numbers, emails, transcripts), tab-data clear action, and honest empty states.
-- No real call history or outbound call controls.
+- Supabase server verifies the user and selected-organization membership. Guests redirect to login; users without valid membership are redirected to onboarding.
+- Shows redacted **simulated terminal outcomes** from the current browser tab: timestamp, terminal state, and outcome category.
+- Outcome/date filters, synthetic outcome details, redacted JSON export and explicit tab-data clear.
+- Does not expose a real dialer or real call history.
 
 ### `/dashboard/analytics`
 
-- Same authentication and organization scoping.
-- Summary cards, outcome-distribution bar charts, and a mock scenario funnel, all computed from the same redacted tab-only records.
-- No synthetic data is invented as customer activity; no revenue or conversion figures are claimed.
+- Uses the same authenticated and organization-scoped server authorization.
+- Renders mock KPI cards, outcome distribution, and scenario funnel based on the same synthetic tab records, never fabricated customer activity.
+- Does not claim real revenue, conversions, duration, or call costs.
 
-### Activity source and lifecycle
+### Data boundary
 
-- Only `MockCampaignSimulation` terminal states from the existing simulation studio are copied.
-- Browser `sessionStorage`, key scoped to the server-verified organization UUID, stores **only a random synthetic record ID, timestamp, terminal state, and outcome enum**.
-- No direct persistence into Supabase, calls, campaigns, CRM, server logs, or real provider systems.
-- Hard limit **200** most recent redacted outcomes, discard records older than **30 days**. Browser-tab storage may be lost when the tab/window closes.
-- A successful sign-out clears all organization-scoped synthetic tab summaries; explicit Clear removes the selected organization only.
-- Reuse of the existing `/dashboard/campaigns#simulation-studio` to generate a mock outcome is required before charts and rows populate.
+- Source: terminal events from `MockCampaignSimulation` after a new authoritative simulation preflight.
+- Browser `sessionStorage`, key scoped by server-verified organization UUID. Only synthetic random record ID, timestamp, terminal state and mock outcome category are kept.
+- Most recent **200** records per organization, with **30-day** record validation. Data is lost when storage is cleared or the tab context ends; this is not persistent analytics.
+- Successful dashboard sign-out clears the synthetic summaries; the Clear button removes the currently selected organization's local summary.
+- No contact or lead IDs/names, phone numbers, email addresses, transcripts, recordings, provider payloads, campaign or agent identifiers are included in the dedicated Calls/Analytics tab reports.
+- To populate these views, use `/dashboard/campaigns#simulation-studio` with approved synthetic fixtures. No provider requests or calls are initiated.
 
-## Regression tests
+## Local Windows validation — 2026-10-29
 
-- Unit tests: `tests/simulation-activity.test.ts` — organization separation, malformed storage rejection, retention, 200-row cap, date/outcome filtering, metrics, export redaction.
-- New isolated Playwright: `tests/e2e/authenticated-simulation-activity.spec.ts` — real isolated login, empty state, simulation -> Calls -> Analytics, filtering, download, and clear.
-- Updated `tests/e2e/dashboard-navigation.spec.ts` — protected Calls/Analytics routes plus implemented sidebar paths.
+The user supplied PowerShell evidence from a clean detached worktree `voicepilot-ai-pr18-integrated`, at application commit `7296d243d7680ef8faf8b0ea9102b4969814aece`:
 
-## Local Windows acceptance
+| Check | Verified outcome |
+| --- | --- |
+| `npm ci` | PASS, 0 reported vulnerabilities |
+| `npm run typecheck` | PASS |
+| `npm run lint` | PASS |
+| `npm test` | **244 passed, 20 skipped** |
+| `npm run build` | PASS with process-scoped nonfunctional loopback Supabase placeholders; the two dedicated routes are explicitly dynamic |
+| Isolated authenticated `Playwright` production run | **20 passed, 3 skipped** |
+| Browser installation | Matching Playwright Chromium / headless shell installed locally |
 
-Use an **independent safe worktree** if changing branches would disturb uncommitted `tsconfig.tsbuildinfo`, `next-env.d.ts`, or cache files. Verify the Next.js local server belongs to this checkout and the isolated Docker Compose project uses loopback ports before testing.
+The existing `voicepilot-local-loopback` Docker Compose services were healthy, with API `127.0.0.1:55421`, pooler `127.0.0.1:55422` and studio `127.0.0.1:55423`.
+The worktree used a local junction to access ignored Supabase configuration under the original checkout's `.local/supabase-loopback-source`, **without copying secrets into Git**.
+The fixture metadata file was absent **before** the successful final run. The runner returned without reporting any cleanup failure; a separate **post-run** `Test-Path` confirmation has not yet been provided.
 
-From this branch in PowerShell:
+The isolated production-mode runner intentionally skips three developer-preview-only tests. Those tests were executed separately by hosted CI, below.
+
+### Local authenticated test procedure
+
+From a dedicated verified test worktree with the already running isolated Compose project and valid local configuration:
 
 ```powershell
 npm run typecheck
 npm run lint
-npm test -- tests/simulation-activity.test.ts
-npm run build
+npm test
 powershell -ExecutionPolicy Bypass -File .\scripts\run-isolated-e2e.ps1 -TestSelection all -Runtime production -ServerPort 3004
+Test-Path ".\.local\voicepilot-local-loopback-fixtures.json"
 ```
 
-Pick an available loopback port; **never kill a pre-existing listener without ownership verification**. The established E2E runner enforces local Compose identity, migration ledger 001–011, fixture cleanup, and process ownership. Don't paste fixture credentials into logs or commit them.
+Expected final metadata path check: `False`. **Never delete metadata manually or reset volumes** if cleanup has a problem; inspect the generated fixture IDs and isolate ownership first. Do not print or commit fixture passwords. Use an available verified loopback server port; do not kill unrelated listeners.
 
-Record PASS/FAIL/SKIPPED/NOT IMPLEMENTED by route and button, screenshot evidence, browser console/network errors, test counts, and isolated fixture cleanup. The new routes have now passed the locally reported isolated acceptance run below. No independent GitHub Actions checks are recorded; review integration again after the upstream branch changes.
+To compile without real Supabase credentials, set `NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:55421` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to a clearly nonfunctional temporary placeholder in the process environment, then clear them. That test build does not exercise authentication.
 
-## Explicit limitations
+## GitHub-hosted Windows CI — 2026-10-29
 
-- **These are synthetic outcome summaries, not a call database.** They are not durable across browsers, devices, sign-outs, or cleared tab storage.
-- No call audio, dialer, recording, transcript, contact lookup, actual agent response, duration, billing, cost, or real conversion analytics is available.
-- The developer preview remains a separate simulation-only page; it does not grant authentication.
-- No automatic merge or deployment.
+- Run: https://github.com/praveen-kuntolla/voice-pilot/actions/runs/40820345861
+- Head: `7296d243d7680ef8faf8b0ea9102b4969814aece`.
+- **Both jobs completed successfully**: npm ci, TypeScript, ESLint, **244 passed / 20 skipped** Vitest, production build, git diff check, plus **3 passed** Chromium developer-preview Playwright.
+- Read-only repository permission; nonfunctional loopback Supabase placeholders; Node 24 and Windows runner; no real provider credentials or remote database services.
+- Hosted CI does **not** replace the local authenticated browser suite because that suite requires an existing isolated Docker/Supabase project and carefully scoped fixtures.
 
-## Local Windows QA acceptance — 2026-10-29
+## Test coverage and limitations
 
-Latest reported test/repair commit: `57ce5c02cc68fe72dfa702ee5889a85550df5c45`.
+- `tests/simulation-activity.test.ts`: organization-scoped keys, invalid record rejection, 200-row cap, retention, filters, metrics and export redaction.
+- `tests/e2e/authenticated-simulation-activity.spec.ts`: isolated login, empty state, simulation to Calls and Analytics, filtering, export and clear.
+- `tests/e2e/dashboard-navigation.spec.ts`: guest redirects, implemented authenticated links and navigation.
+- QA does not establish production readiness, complete accessibility/performance compliance, real call correctness, or durable analytics.
 
-- Explicit `force-dynamic` rendering added on both new authenticated pages; user session and organization membership checks remain in place.
-- Isolated test runner now captures and reports the original setup/test failure separately from a cleanup failure.
-- **Vitest:** 231 passed, 15 skipped.
-- **TypeScript:** passed.
-- **ESLint:** passed.
-- **Production build:** passed with **process-scoped isolated Supabase** environment variables.
-- **Authenticated Playwright:** 20 passed, 3 skipped.
-- **Fixture cleanup:** passed; fixture metadata removed.
-- **`git diff --check`:** passed.
-- Established migration ledger **001–011** untouched; migrations **012–016** remain review-only and unapplied to established/remote databases.
-- Generated `next-env.d.ts` and `tsconfig.tsbuildinfo` remain unstaged/uncommitted in the user's test worktree.
+## Remaining release gates
 
-The acceptance counts are from the user's local Codex report, not independent GitHub-hosted CI. No deployment, provider connectivity, real call, remote Supabase activity, or PR merge is authorized by this report.
-
-### Post-merge integration requirement
-
-PR #16 was subsequently merged into `master`. At last check, PR #17 was **6 commits behind `master`**, so perform an intentional synchronization and conflict review for PR #17 before merging it, then update PR #18 from its new base and rerun the relevant browser and build tests. Do not assume a previously passing stacked PR is merge-ready against a changed `master`.
+1. Obtain independent human code review / approval. The assistant's technical inspection is **not** a formal GitHub review approval.
+2. Verify the fixture metadata path is absent **after** the last local Playwright run.
+3. Request separate explicit authorization before merging PR #18. **No automatic merge or deployment.**
+4. Production migrations, telephony/provider configuration, live calls, messaging, billing and remote Supabase remain excluded.
