@@ -36,10 +36,11 @@ export class PostgresTransactionExecutor implements SafetyTransactionExecutor {
       if (client && began) {
         try {
           await client.query("rollback"); began = false; this.emit("transaction_rolled_back", correlationId, now());
-          if (commitAttempted) discardError = new Error("discard_uncertain_connection");
+          if (commitAttempted) { discardError = new Error("discard_uncertain_connection"); this.emit("unsafe_pool_discard", correlationId, now()); }
         } catch {
           discardError = new Error("discard_unsafe_connection");
           this.emit("transaction_failed", correlationId, now());
+          this.emit("unsafe_pool_discard", correlationId, now());
         }
       } else if (client) {
         discardError = new Error("discard_uncertain_connection");
@@ -52,7 +53,7 @@ export class PostgresTransactionExecutor implements SafetyTransactionExecutor {
     }
   }
 
-  private emit(type: "transaction_rolled_back" | "transaction_failed" | "pool_failed", correlationId: string, occurredAt: number) {
+  private emit(type: "transaction_rolled_back" | "transaction_failed" | "pool_failed" | "unsafe_pool_discard", correlationId: string, occurredAt: number) {
     const event = createGatewayEvent({ type, correlationId, reason: "offline_gateway_failure", occurredAt });
     if (event) void this.options.observer?.emit(event);
   }
@@ -60,6 +61,6 @@ export class PostgresTransactionExecutor implements SafetyTransactionExecutor {
 
 export function createDisposableLocalGatewayPool(config: PoolConfig & { connectionString: string }) {
   const url = new URL(config.connectionString);
-  if (!(["127.0.0.1", "localhost"].includes(url.hostname)) || !/^vp_gateway_[a-z0-9_]+$/i.test(url.pathname.slice(1))) throw new Error("Refusing non-disposable PostgreSQL target");
+  if (!(["127.0.0.1", "localhost"].includes(url.hostname)) || !/^vp_(?:gateway|operational)_[a-z0-9_]+$/i.test(url.pathname.slice(1))) throw new Error("Refusing non-disposable PostgreSQL target");
   return new Pool({ ...config, max: Math.min(config.max ?? 4, 8), connectionTimeoutMillis: Math.min(config.connectionTimeoutMillis ?? 5_000, 10_000), idleTimeoutMillis: Math.min(config.idleTimeoutMillis ?? 5_000, 30_000) });
 }

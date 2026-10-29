@@ -20,7 +20,7 @@ export interface PolicyContextRepository {
   claimRateLimit(input: { organizationId: string; provider: string; limit: number; now: number }): Promise<boolean>;
 }
 export type PolicyDecision =
-  | { ok: true; actorId: string; organizationId: string; idempotencyKey: string; checkedAt: number; execution: { provider: string; maxConcurrent: number; amountCents: number; budgetCents: number } }
+  | { ok: true; actorId: string; organizationId: string; idempotencyKey: string; checkedAt: number; execution: { provider: string; maxConcurrent: number; maxAttempts: number; amountCents: number; budgetCents: number } }
   | { ok: false; category: "denied" | "unavailable" | "safety_blocked"; reason: string };
 
 const required = (value: string) => typeof value === "string" && value.trim().length > 0 && value.length <= 256;
@@ -61,5 +61,5 @@ export async function authorizeProviderAction(deps: {
     const expiresAt = now + ttl;
     if (!Number.isSafeInteger(ttl) || ttl < 1 || !Number.isSafeInteger(expiresAt) || !(await deps.safety.claimReplay({ organizationId: auth.organizationId, provider: context.provider, eventId: `action:${input.idempotencyKey}`, expiresAt }, now))) return { ok: false, category: "safety_blocked", reason: "duplicate_idempotency_key" };
   } catch { return { ok: false, category: "unavailable", reason: "policy_claim_failed" }; }
-  return { ok: true, actorId: auth.actorId, organizationId: auth.organizationId, idempotencyKey: input.idempotencyKey, checkedAt: now, execution: { provider: context.provider, maxConcurrent: context.limits.maxConcurrent, amountCents: context.estimatedCostCents, budgetCents: context.limits.maxSpendCents } };
+  return { ok: true, actorId: auth.actorId, organizationId: auth.organizationId, idempotencyKey: input.idempotencyKey, checkedAt: now, execution: { provider: context.provider, maxConcurrent: context.limits.maxConcurrent, maxAttempts: context.limits.maxAttempts, amountCents: context.estimatedCostCents, budgetCents: context.limits.maxSpendCents } };
 }
