@@ -6,6 +6,8 @@ $fixtureScript = Join-Path $PSScriptRoot 'local-supabase-fixtures.ps1'
 $server = $null
 $serverLog = Join-Path $repo '.local\isolated-next.stdout.log'
 $serverErrorLog = Join-Path $repo '.local\isolated-next.stderr.log'
+$primaryError = $null
+$cleanupError = $null
 function Get-DescendantProcessIds([int]$rootId) {
   $ids = [System.Collections.Generic.List[int]]::new(); $ids.Add($rootId)
   $changed = $true
@@ -107,9 +109,20 @@ try {
   if ($TestSelection -eq 'login') { & npx playwright test tests/e2e/isolated-auth-flow.spec.ts --grep "persists a session" --workers=1 }
   elseif ($TestSelection -eq 'voice') { & npx playwright test tests/e2e/public-smoke.spec.ts --grep "local voice simulator is opt-in" --workers=1 }
   else { & npx playwright test --workers=1 }
-  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  if ($LASTEXITCODE -ne 0) { throw "Playwright suite failed with exit code $LASTEXITCODE." }
+} catch {
+  $primaryError = $_.Exception
 } finally {
   Remove-Item Env:E2E_ISOLATED_AUTH,Env:E2E_EMAIL_A,Env:E2E_PASSWORD_A,Env:E2E_EMAIL_B,Env:E2E_PASSWORD_B,Env:E2E_EMAIL_C,Env:E2E_PASSWORD_C,Env:PLAYWRIGHT_BASE_URL,Env:PLAYWRIGHT_REUSE_EXISTING_SERVER,Env:PORT -ErrorAction SilentlyContinue
   if ($server -and -not $KeepServer) { Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue }
-  try { & $fixtureScript -Action cleanup | Out-Null } catch { Write-Error 'Fixture cleanup failed; inspect local fixture metadata before retrying.' }
+  try { & $fixtureScript -Action cleanup | Out-Null } catch { $cleanupError = $_.Exception }
+}
+if ($primaryError) {
+  if ($cleanupError) { Write-Error ("Original runner error: {0}; fixture cleanup error: {1}" -f $primaryError.Message, $cleanupError.Message) }
+  else { Write-Error ("Original runner error: {0}" -f $primaryError.Message) }
+  exit 1
+}
+if ($cleanupError) {
+  Write-Error ("Fixture cleanup failed: {0}" -f $cleanupError.Message)
+  exit 1
 }
