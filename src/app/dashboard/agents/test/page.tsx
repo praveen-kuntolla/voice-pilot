@@ -66,7 +66,6 @@ export default function AgentTest() {
     setReviewed(false);
     setPresetId("");
     setPresetTurn(0);
-    setSimulatedSpeech("");
     setError("Simulation authorization is unavailable. A new server-approved preflight is required before continuing.");
   }
   function chooseAgent(value: string) { reset(); setAgentId(value); }

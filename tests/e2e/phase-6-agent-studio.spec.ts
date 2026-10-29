@@ -76,7 +76,7 @@ test.describe("Phase 6 multi-turn Agent Test Studio", () => {
     await expect(page.getByRole("button", { name: "Preview TXT export" })).toHaveCount(0);
     await expect(page.locator("pre")).toHaveCount(0);
     await expect(page.getByText("Policy preflight")).toHaveCount(0);
-    await expect(page.getByRole("alert")).toContainText("new server-approved preflight");
+    await expect(page.locator('p[role="alert"]')).toContainText("new server-approved preflight");
 
     await page.getByLabel("Sample customer message").fill("Retry without permission");
     await page.getByRole("button", { name: "Run simulation" }).click();
@@ -106,7 +106,7 @@ test.describe("Phase 6 multi-turn Agent Test Studio", () => {
       await page.getByRole("button", { name: "Run simulation" }).click();
       await expect(page.getByText("No simulated events yet.")).toBeVisible();
       await expect(page.getByRole("button", { name: "Preview JSON export" })).toHaveCount(0);
-      await expect(page.getByRole("alert")).toContainText("new server-approved preflight");
+      await expect(page.locator('p[role="alert"]')).toContainText("new server-approved preflight");
     });
   }
 
@@ -149,7 +149,7 @@ test.describe("Phase 6 multi-turn Agent Test Studio", () => {
     release();
     await expect(page.getByText("No simulated events yet.")).toBeVisible();
     await expect(page.getByText(/State: idle/)).toBeVisible();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.locator('p[role="alert"]')).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Preview TXT export" })).toHaveCount(0);
   });
 
