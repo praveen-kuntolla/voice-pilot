@@ -17,7 +17,7 @@ The deterministic matcher normalizes and tokenizes lexical terms, splits each so
 
 ## Authorization lifecycle
 
-Knowledge Lab access uses the already-existing server-authoritative Agent Test Studio preflight; it does not invent a browser organization claim. Reset, agent change, malformed/denied preflight, an organization/agent mismatch, and unmount clear the current controller and invalidate browser Knowledge Lab state. Pending browser file reads carry a session-bound generation token and cannot restore drafts, notices, or excerpts after that invalidation. A new successful preflight is required before sources can be added or searched. Transcript export remains hidden while preflight is revalidated and after denial.
+Knowledge Lab access uses the already-existing server-authoritative Agent Test Studio preflight; it does not invent a browser organization claim. Reset, Clear all, source edits/removals, agent change, malformed/denied preflight, an organization/agent mismatch, and unmount invalidate pending local file reads before clearing browser Knowledge Lab state. A delayed read therefore cannot restore drafts, notices, or excerpts after a purge. A new successful preflight is required before sources can be added or searched. Transcript export remains hidden while preflight is revalidated and after denial.
 
 ## Reproducible checks
 

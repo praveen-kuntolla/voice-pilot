@@ -46,6 +46,7 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
   sessionRef.current = { authorized, busy, sessionKey };
 
   function clearEphemeralKnowledge() {
+    fileReadGate.current.invalidate();
     sourcesRef.current = [];
     setSources([]);
     setDraft(emptyDraft);
@@ -90,6 +91,7 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
       setError(validation.error);
       return;
     }
+    fileReadGate.current.invalidate();
     const next = editingId
       ? currentSources.map((source) => source.id === editingId ? { ...validation.value, id: source.id } : source)
       : [...currentSources, { ...validation.value, id: `mock-source-${++sourceSequence.current}` }];
@@ -103,6 +105,7 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
   }
 
   function editSource(source: KnowledgeSource) {
+    fileReadGate.current.invalidate();
     setDraft({ title: source.title, content: source.content });
     setEditingId(source.id);
     setMatches([]);
@@ -111,6 +114,7 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
   }
 
   function removeSource(sourceId: string) {
+    fileReadGate.current.invalidate();
     const next = sourcesRef.current.filter((source) => source.id !== sourceId);
     sourcesRef.current = next;
     setSources(next);
@@ -200,7 +204,7 @@ export function KnowledgeLab({ authorized, busy, sessionKey, onCopyExcerpt }: Kn
           </div>
         </div>
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}><h4>Mock sources ({sources.length}/{MAX_KNOWLEDGE_SOURCES})</h4>{sources.length > 0 && <button className="btn ghost" type="button" onClick={() => { clearEphemeralKnowledge(); setNotice("All mock sources and excerpts were cleared from this browser session."); }} disabled={busy}>Clear all</button>}</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}><h4>Mock sources ({sources.length}/{MAX_KNOWLEDGE_SOURCES})</h4>{sources.length > 0 && <button className="btn ghost" type="button" onClick={clearEphemeralKnowledge} disabled={busy}>Clear all</button>}</div>
           {!sources.length && <p className="muted">No mock sources yet. Source text remains only in this browser until reset, authorization loss, or removal.</p>}
           {sources.map((source) => <article key={source.id} className="notice" style={{ display: "block", marginTop: 8 }}><strong>{source.title}</strong><p className="muted">{source.content.length.toLocaleString()} characters · local only</p><div style={{ display: "flex", gap: 8 }}><button className="btn ghost" type="button" onClick={() => editSource(source)} disabled={busy}>Replace</button><button className="btn ghost" type="button" onClick={() => removeSource(source.id)} disabled={busy}><Trash2 size={15} /> Remove</button></div></article>)}
         </div>
