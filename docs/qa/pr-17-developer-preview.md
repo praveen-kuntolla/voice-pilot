@@ -26,3 +26,17 @@ Tested locally on `http://127.0.0.1:3002/developer-preview` with synthetic in-me
 - Fixture cleanup: **passed** through the existing isolated runner.
 
 The export implementation now keeps its object URL alive briefly after the click so browsers can complete the download before cleanup. The existing preview remains synthetic and session-local.
+
+## Latest navigation correction — pending local acceptance
+
+After the above recorded test run, PR #17 also corrected the **real authenticated dashboard** sidebar:
+- `Settings` now resolves to the implemented `/settings` page, not missing `/dashboard/settings`.
+- `Call simulation` and `Simulation reports` navigate to the existing `/dashboard/campaigns#simulation-studio` rather than missing `/dashboard/calls` and `/dashboard/analytics`.
+- The `/settings` route now requires authentication in the Next.js session proxy.
+- New `tests/e2e/dashboard-navigation.spec.ts` verifies guest redirect, authenticated link destinations, Settings navigation, and simulation-studio navigation.
+
+**Status: NOT YET RERUN** for these additional changes. The earlier 3 developer-preview / 17 authenticated test results do **not** independently certify the new navigation/auth code. Run the isolated Playwright suite again and record fresh counts before marking the PR ready.
+
+## Coverage limitations
+
+This acceptance tests representative controls and paths, **not every possible backend API state or every dashboard button**. Dedicated real Calls and Analytics pages are not implemented. The developer preview is synthetic in-memory state; it does not persist to Supabase or perform real calls. Real calling, messaging, AI provider integration, billing, production release, and migrations 012–016 remain out of scope.
