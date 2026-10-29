@@ -13,6 +13,28 @@ The Agent Test Studio is a local, deterministic simulation. It supports a bounde
 - Failed sessions require reset; interrupted sessions return to idle; ended sessions cannot accept new turns.
 - Export remains local-only and requires review. It contains no contact records or credentials, but redaction is best effort and user review is required.
 
+## PR #20 review remediation — 2026-10-29
+
+- **Preflight rejection is a revocation:** when server preflight is denied, malformed, unavailable, or changes the selected agent or current session's organization, the client terminates the old mock controller, invalidates the request generation, clears the previous timeline, preview, reviewed checkbox, stored authorization snapshot and typed sample. It displays a generic authorization error; no transcript exports remain available. This also applies to a response with `allowed: true` but mismatched scope.
+- **Revalidation is mandatory:** even after an authorized turn, the next turn temporarily drops export eligibility during preflight. Every subsequent turn must obtain a new successful server preflight. Once authorized, deterministic mock provider errors still retain reviewable synthetic diagnostic events and require Reset.
+- **Turn-cap UX:** at exactly eight consumed turns the run and next-preset controls are disabled, the UI displays `Reset to start another simulated session.`, and the runtime retains its independent ninth-turn rejection.
+- **Stale async:** request-generation and abort checks suppress results after reset, unmount, agent change or invalidation; the regression suite covers delayed denied responses.
+
+### Regression coverage
+
+- `tests/voice-runtime.test.ts`: fail-closed approval/scope validation, malformed organization UUID rejection, default eight-turn cap (in addition to multi-turn order/error/interruption).
+- `tests/e2e/phase-6-agent-studio.spec.ts`: authorized first turn → intercepted 403 on second preflight → timeline, export and prior approval disappear; retry denied, then recover through a **fresh successful** preflight; reject mismatched agent and mismatched organization; cap at eight without a ninth preflight; reset while a denied preflight response is pending. Requires the established isolated local Supabase fixtures.
+- Other authenticated E2E and tests are unchanged except when explicitly covered above.
+
+### Independent hosted CI
+
+- `.github/workflows/pr20-offline-quality.yml` runs on the feature branch and relevant PR updates with read-only GitHub permissions, nonfunctional loopback Supabase placeholders and all worker/provider/outbound activation flags disabled.
+- Separate Windows jobs run npm ci, TypeScript, ESLint, Vitest, production build, `git diff --check`; isolated **developer preview only** Chromium tests; and Python pytest against the installed worker package without starting a worker or connecting to a provider.
+- Authenticated Supabase Playwright is **not run on GitHub-hosted CI**. Its completion must be reported from a user-controlled isolated test worktree, with successful fixture cleanup and `Test-Path ".\\.local\\voicepilot-local-loopback-fixtures.json"` equal to `False` after the run.
+- Previous Codex-reported `248 passed / 20 skipped` Vitest, `51 passed` Python, and `23 passed / 3 skipped` isolated Playwright apply to the **original Phase 6 commit** `14b51b105068a36076a096e694b5f74ea2fdbd68` only. **Do not treat them as acceptance for the review-fix commits.** Hosted CI and fresh local E2E results must be recorded separately.
+
+**Safety:** no real provider requests, database writes/migrations, LiveKit, microphone, outbound calls, messaging, deployments, credential changes or Docker volume cleanup. Established migrations **001–011** remain untouched; **012–016 are review-only** on established or remote databases. Keep this PR **draft and unmerged** until review.
+
 ## Verification checklist
 
 | Check | Result |
