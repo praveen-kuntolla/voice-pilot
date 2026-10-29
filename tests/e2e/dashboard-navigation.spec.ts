@@ -4,9 +4,11 @@ import { waitForLoginHydration } from "./login-readiness";
 const isolated = process.env.E2E_ISOLATED_AUTH === "true" &&
   Boolean(process.env.E2E_EMAIL_A && process.env.E2E_PASSWORD_A);
 
-test("settings redirects guests to login instead of exposing workspace controls", async ({ page }) => {
-  await page.goto("/settings");
-  await expect(page).toHaveURL(/\/login/);
+test("settings, Calls and Analytics redirect guests to login", async ({ page }) => {
+  for (const path of ["/settings", "/dashboard/calls", "/dashboard/analytics"]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/login/);
+  }
 });
 
 test("authenticated dashboard links open implemented settings and simulation screens", async ({ page }) => {
@@ -24,16 +26,14 @@ test("authenticated dashboard links open implemented settings and simulation scr
     Agents: "/dashboard/agents",
     Contacts: "/dashboard/contacts",
     Campaigns: "/dashboard/campaigns",
-    "Call simulation": "/dashboard/campaigns#simulation-studio",
-    "Simulation reports": "/dashboard/campaigns#simulation-studio",
+    Calls: "/dashboard/calls",
+    Analytics: "/dashboard/analytics",
     Settings: "/settings",
   } as const;
 
   for (const [name, href] of Object.entries(routes)) {
     await expect(sidebar.getByRole("link", { name, exact: true })).toHaveAttribute("href", href);
   }
-  await expect(sidebar.locator('a[href="/dashboard/calls"]')).toHaveCount(0);
-  await expect(sidebar.locator('a[href="/dashboard/analytics"]')).toHaveCount(0);
   await expect(sidebar.locator('a[href="/dashboard/settings"]')).toHaveCount(0);
 
   await sidebar.getByRole("link", { name: "Settings" }).click();
@@ -44,7 +44,14 @@ test("authenticated dashboard links open implemented settings and simulation scr
 
   await page.getByRole("link", { name: /back to dashboard/i }).click();
   await expect(page.getByRole("heading", { name: /workspace overview/i })).toBeVisible();
-  await page.locator("aside.side").getByRole("link", { name: "Call simulation" }).click();
+  await page.locator("aside.side").getByRole("link", { name: "Calls", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/calls/);
+  await expect(page.getByRole("heading", { name: "Simulated calls" })).toBeVisible();
+  await expect(page.getByText("SIMULATION ONLY.", { exact: false }).first()).toBeVisible();
+  await page.getByRole("link", { name: "Analytics", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/analytics/);
+  await expect(page.getByRole("heading", { name: "Simulation analytics" })).toBeVisible();
+  await page.getByRole("link", { name: /open simulation studio/i }).click();
   await expect(page).toHaveURL(/\/dashboard\/campaigns#simulation-studio/);
   await expect(page.getByText("Simulation Studio", { exact: false }).first()).toBeVisible();
 });
