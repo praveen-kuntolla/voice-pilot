@@ -6,7 +6,7 @@ export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
   const configurationError = supabaseConfigurationError();
   if (configurationError) {
-    if (request.nextUrl.pathname.startsWith("/dashboard") || request.nextUrl.pathname.startsWith("/onboarding") || request.nextUrl.pathname.startsWith("/auth/")) {
+    if (request.nextUrl.pathname.startsWith("/dashboard") || request.nextUrl.pathname.startsWith("/settings") || request.nextUrl.pathname.startsWith("/onboarding") || request.nextUrl.pathname.startsWith("/auth/")) {
       return NextResponse.redirect(new URL("/login?error=configuration", request.url));
     }
     return response;
@@ -15,7 +15,7 @@ export async function updateSession(request: NextRequest) {
     cookies: { getAll: () => request.cookies.getAll(), setAll: (values) => { values.forEach(({ name, value }) => request.cookies.set(name, value)); response = NextResponse.next({ request }); values.forEach(({ name, value, options }) => response.cookies.set(name, value, options)); } },
   });
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user && (request.nextUrl.pathname.startsWith("/dashboard") || request.nextUrl.pathname.startsWith("/onboarding"))) return NextResponse.redirect(new URL("/login?next=" + encodeURIComponent(request.nextUrl.pathname), request.url));
+  if (!user && (request.nextUrl.pathname.startsWith("/dashboard") || request.nextUrl.pathname.startsWith("/settings") || request.nextUrl.pathname.startsWith("/onboarding"))) return NextResponse.redirect(new URL("/login?next=" + encodeURIComponent(request.nextUrl.pathname), request.url));
   if (user && ["/login", "/signup"].includes(request.nextUrl.pathname)) return NextResponse.redirect(new URL("/dashboard", request.url));
   return response;
 }
