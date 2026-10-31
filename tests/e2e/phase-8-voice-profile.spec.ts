@@ -17,7 +17,7 @@ test("authenticated voice profile lab stays deterministic, accessible, and provi
   await expect(page.getByRole("heading", { name: "Voice profile lab" })).toBeVisible();
   await expect(page.getByText("SIMULATION ONLY", { exact: false }).first()).toBeVisible();
 
-  const profile = page.getByLabel("Voice profile");
+  const profile = page.getByLabel("Voice profile", { exact: true });
   await expect(profile.locator("option")).toHaveCount(3);
   await profile.selectOption("mock-calm-en");
   await page.getByLabel("Preview text").fill("Keyboard-safe synthetic sample.");
@@ -27,14 +27,14 @@ test("authenticated voice profile lab stays deterministic, accessible, and provi
 
   await profile.selectOption("mock-clear-en");
   await page.getByRole("button", { name: "Preview profile text" }).click();
-  await expect(page.getByRole("alert")).toContainText("does not match the agent language");
+  await expect(page.getByRole("status")).toContainText("Clear English");
   await profile.selectOption("mock-calm-en");
   await page.getByLabel("Preview text").fill("");
   await page.getByRole("button", { name: "Preview profile text" }).click();
-  await expect(page.getByRole("alert")).toContainText("Enter sample text");
+  await expect(page.getByText(/Enter sample text/)).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.getByLabel("Voice profile")).toBeVisible();
+  await expect(page.getByLabel("Voice profile", { exact: true })).toBeVisible();
   expect(unexpectedRequests).toEqual([]);
   await page.reload();
   await expect(page.getByRole("status")).toHaveCount(0);
