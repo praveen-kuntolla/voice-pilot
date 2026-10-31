@@ -4,7 +4,7 @@ export const providerIds={stt:["mock","deepgram"],llm:["mock","openai"],tts:["mo
 const providerId=z.enum(["mock","deepgram","openai","elevenlabs"]);
 export const runtimeConfigSchema=z.object({
   organizationId:z.string().uuid(),agentId:z.string().uuid(),language:z.string().regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?$/).max(20),
-  voiceId:z.string().max(120).optional(),instructions:z.string().min(1).max(10000),knowledgeSourceIds:z.array(z.string().uuid()).max(100).default([]),
+  voiceId:z.string().max(120).optional(),mockVoiceLabel:z.string().trim().min(1).max(120).optional(),instructions:z.string().min(1).max(10000),knowledgeSourceIds:z.array(z.string().uuid()).max(100).default([]),
   providers:z.object({stt:providerId.default("mock"),llm:providerId.default("mock"),tts:providerId.default("mock")}).default({stt:"mock",llm:"mock",tts:"mock"}),
 }).superRefine((value,ctx)=>{
   if(!providerIds.stt.includes(value.providers.stt as "mock"|"deepgram"))ctx.addIssue({code:"custom",path:["providers","stt"],message:"Unsupported STT provider"});
@@ -67,4 +67,9 @@ export class LocalConversationController {
 }
 
 export function mockConversation(config:RuntimeConfig,userText="Hello"){return [{state:"greeting" as const,text:`Hello. I am your ${config.language} voice assistant.`},{state:"listening" as const,text:"I am listening."},{state:"understanding" as const,text:userText},{state:"responding" as const,text:"Thanks for reaching out. This is a local mock response."},{state:"speaking" as const,text:"Thanks for reaching out. This is a local mock response."},{state:"ended" as const,text:"Mock session ended."}]}
+/**
+ * Deterministic display label for a simulated session. An explicitly supplied
+ * mock voice label is descriptive only; it never selects or controls real speech.
+ */
+export function mockVoiceSessionLabel(config:Pick<RuntimeConfig,"mockVoiceLabel">){return config.mockVoiceLabel?.trim() ? `${config.mockVoiceLabel} (simulation label only)` : "Mock voice";}
 export function roomName(organizationId:string,agentId:string,sessionId:string){return `voicepilot:${organizationId}:${agentId}:${sessionId}`}

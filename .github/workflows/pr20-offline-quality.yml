@@ -5,16 +5,20 @@ on:
     branches:
       - feature/phase-6-agent-test-studio
       - feature/phase-8b-voice-profile-assignment
+      - feature/phase-8c-voice-configuration
   pull_request:
     branches:
       - master
       - feature/phase-8-offline-voice-profiles
+      - feature/phase-8b-voice-profile-assignment
     paths:
       - ".github/workflows/pr20-offline-quality.yml"
       - "src/app/dashboard/agents/test/**"
       - "src/app/dashboard/agents/page.tsx"
       - "src/components/offline-voice-preview.tsx"
+      - "src/components/mock-voice-configurator.tsx"
       - "src/lib/voice-runtime.ts"
+      - "src/lib/voice-profiles.ts"
       - "tests/**"
       - "workers/voice-agent/**"
       - "docs/phase-6-agent-test-studio-qa.md"

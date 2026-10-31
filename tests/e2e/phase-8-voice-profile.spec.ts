@@ -40,8 +40,9 @@ test("authenticated voice profile lab stays deterministic, accessible, and provi
   await expect(page.getByRole("status")).toHaveCount(0);
 
   await page.goto("/dashboard/agents");
-  const builderProfile = page.getByLabel("Voice profile", { exact: true });
+  const builderProfile = page.getByLabel("Mock voice profile", { exact: true });
   await builderProfile.selectOption("mock-warm-en");
+  await page.getByRole("button", { name: "Apply configuration" }).click();
   await expect(page.getByText(/Selected mock voice: Warm English/)).toBeVisible();
   await page.getByLabel("Preview text").fill("Agent builder synthetic sample.");
   await page.getByRole("button", { name: "Preview profile text" }).click();
