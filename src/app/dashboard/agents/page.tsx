@@ -44,6 +44,7 @@ export default function Agents() {
     <Link className="muted" href="/dashboard">← Back to dashboard</Link>
     <div className="section" style={{ paddingTop: 40 }}>
       <div className="eyebrow">Agent builder · safe test mode</div><h1>Build your voice agent.</h1>
+      <p><Link className="btn ghost" href="/dashboard/agents/voice-preview">Open offline voice profile lab</Link></p>
       <p className="muted">Provider activation and real calls remain disabled.</p>
       <div className="grid" style={{ marginTop: 30 }}>
         <form className="card" onSubmit={save}>
