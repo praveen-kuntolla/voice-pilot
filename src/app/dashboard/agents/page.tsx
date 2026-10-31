@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { Bot, Mic2, ShieldCheck } from "lucide-react";
 import { AgentProviderGovernance } from "@/components/agent-provider-governance";
+import { OfflineVoicePreview } from "@/components/offline-voice-preview";
+import { getOfflineVoiceProfile } from "@/lib/voice-profiles";
 
 type Agent = { id: string; name: string; instructions: string; language: string; voice_id?: string; status: string };
 const empty = { name: "", instructions: "", language: "en-US", voice_id: "", status: "draft" };
@@ -16,6 +18,7 @@ export default function Agents() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [selectedMockVoice, setSelectedMockVoice] = useState<string | null>(null);
 
   useEffect(() => { fetch("/api/agents").then(async (response) => {
     const body = await response.json();
@@ -29,7 +32,7 @@ export default function Agents() {
     const response = await fetch(editing ? `/api/agents/${editing}` : "/api/agents", { method: editing ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(form) });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) setError(body.error || "Unable to save agent");
-    else { setAgents((current) => editing ? current.map((agent) => agent.id === editing ? body.agent : agent) : [body.agent, ...current]); setMessage(editing ? "Agent updated." : "Draft agent created."); setForm(empty); setEditing(null); }
+    else { setAgents((current) => editing ? current.map((agent) => agent.id === editing ? body.agent : agent) : [body.agent, ...current]); setMessage(editing ? "Agent updated." : "Draft agent created."); setForm(empty); setEditing(null); setSelectedMockVoice(null); }
     setBusy(false);
   }
 
@@ -55,9 +58,11 @@ export default function Agents() {
           <label className="label">Voice<select className="select" value={form.voice_id} onChange={(event) => update("voice_id", event.target.value)}><option value="">Provider voice — not connected</option><option value="safe-demo">Safe demo voice</option></select></label>
           <label className="label">Status<select className="select" value={form.status} onChange={(event) => update("status", event.target.value)}><option value="draft">Draft</option><option value="active">Active (configuration only)</option><option value="archived">Archived</option></select></label>
           <button className="btn primary" disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Create draft agent"}</button>
-          {editing && <button type="button" className="btn ghost" onClick={() => { setEditing(null); setForm(empty); }}>Cancel</button>}
+          {editing && <button type="button" className="btn ghost" onClick={() => { setEditing(null); setForm(empty); setSelectedMockVoice(null); }}>Cancel</button>}
           {error && <p className="muted" role="alert" style={{ color: "#fca5a5" }}>{error}</p>}
           {editing && <AgentProviderGovernance agentId={editing} />}
+          <OfflineVoicePreview contextKey={editing ?? "new-agent"} agentLanguage={form.language} onSelectionChange={setSelectedMockVoice} />
+          <p className="muted" role="status">Selected mock voice: {selectedMockVoice ? (getOfflineVoiceProfile(selectedMockVoice)?.name ?? selectedMockVoice) : "None"}. This browser-only selection is not saved to the agent.</p>
         </form>
         <div className="card"><Mic2 className="icon" /><h3>Saved agents</h3>
           {loading ? <p className="muted">Loading agents…</p> : agents.length === 0 ? <p className="muted">No persisted agents yet.</p> : agents.map((agent) => <div className="card" style={{ padding: 14, marginTop: 10 }} key={agent.id}>
