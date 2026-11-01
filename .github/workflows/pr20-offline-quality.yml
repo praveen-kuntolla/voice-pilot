@@ -204,7 +204,7 @@ jobs:
           gateway_db="vp_gateway_ci_${GITHUB_RUN_ID}"
           psql "$DB_URL" -v ON_ERROR_STOP=1 -c "create database ${gateway_db}"
           gateway_url="${DB_URL%/postgres}/${gateway_db}"
-          pg_dump --no-owner --no-privileges --no-comments "$DB_URL" | psql "$gateway_url" -v ON_ERROR_STOP=1
+          pg_dump --no-owner --no-privileges --no-comments "$DB_URL" | sed '/^SET log_min_messages/d' | psql "$gateway_url" -v ON_ERROR_STOP=1
           echo "GATEWAY_DATABASE_URL=$gateway_url" >> "$GITHUB_ENV"
           echo "CI_GATEWAY_DB=$gateway_db" >> "$GITHUB_ENV"
       - name: Build application
