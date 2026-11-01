@@ -9,6 +9,8 @@ on:
       - feature/phase-10b2-secure-livekit-admission
       - feature/phase-10b3-signed-worker-admission
       - feature/phase-10b4-offline-admission-integration
+      - feature/phase-11b-durable-session-authorization
+      - feature/phase-11b1-transactional-admission
       - feature/phase-10c-integration-hardening
       - feature/phase-11b-durable-session-authorization
       - feature/phase-11b1-transactional-admission
@@ -33,6 +35,8 @@ on:
       - "docs/phase-10a-provider-sandbox-readiness.md"
       - "docs/phase-10c-integration-audit.md"
       - "docs/phase-11b-durable-session-authorization.md"
+      - "supabase/migrations/202610220018_transactional_session_admission.sql"
+      - "scripts/test-session-admission.mjs"
       - "src/lib/durable-session-authorization.ts"
       - "supabase/migrations/202610220017_durable_session_authorization.sql"
   workflow_dispatch:
