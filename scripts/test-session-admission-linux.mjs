@@ -69,5 +69,27 @@ try {
   run(db, "drop trigger test_fail_consumed_audit on public.voice_session_audit_events; drop function public.test_fail_consumed_audit();");
   const retryAfterFault = run(db, `begin; ${context} select public.consume_voice_session_authorization('${faultAssertion}','${org}','${actor}',clock_timestamp(),10,36000); commit;`);
   if (!/\"ok\"\s*:\s*true/.test(retryAfterFault)) throw new Error(`same authorization could not retry after rollback: ${retryAfterFault}`);
+  const leaseOne = uuid(), leaseTwo = uuid(), leaseExpires = new Date(Date.now() + 300_000).toISOString();
+  const leaseSql = (session) => `begin; ${context} select voicepilot_safety.reserve_provider_session('${org}','${agent}','${session}','${leaseExpires}',1,1); commit;`;
+  const leaseResults = await Promise.all([spawnPsql(db, leaseSql(leaseOne)), spawnPsql(db, leaseSql(leaseTwo))]);
+  if (leaseResults.filter(({ output }) => /\"ok\"\s*:\s*true/.test(output)).length !== 1) throw new Error("organization concurrency limit was not enforced atomically");
+  const activeLease = psql(db, `select session_id from voicepilot_safety.provider_session_reservations where organization_id='${org}' and state='active' limit 1`);
+  const duplicateLease = run(db, `begin; ${context} select voicepilot_safety.reserve_provider_session('${org}','${agent}','${activeLease}','${leaseExpires}',1,1); commit;`);
+  if (!/\"reused\"\s*:\s*true/.test(duplicateLease)) throw new Error(`duplicate session reservation was not idempotent: ${duplicateLease}`);
+  if (!/t|true/.test(run(db, `begin; ${context} select voicepilot_safety.release_provider_session('${org}','${activeLease}','released'); commit;`))) throw new Error("session release failed");
+  if (!/f|false/.test(run(db, `begin; ${context} select voicepilot_safety.release_provider_session('${org}','${activeLease}','released'); commit;`))) throw new Error("session release was not idempotent");
+  const secondAfterRelease = run(db, `begin; ${context} select voicepilot_safety.reserve_provider_session('${org}','${agent}','${uuid()}',clock_timestamp()+interval '5 minutes',1,1); commit;`);
+  if (!/\"ok\"\s*:\s*true/.test(secondAfterRelease)) throw new Error(`released capacity was not reusable: ${secondAfterRelease}`);
+  const usageEvent = uuid();
+  const usage = run(db, `begin; ${context} select voicepilot_safety.record_provider_usage('${org}','${usageEvent}','${leaseOne}',7,10); commit;`);
+  if (!/\"ok\"\s*:\s*true/.test(usage)) throw new Error(`usage reservation failed: ${usage}`);
+  const usageReplay = run(db, `begin; ${context} select voicepilot_safety.record_provider_usage('${org}','${usageEvent}','${leaseOne}',7,10); commit;`);
+  if (!/\"reused\"\s*:\s*true/.test(usageReplay)) throw new Error("usage event was not idempotent");
+  const usageDenied = run(db, `begin; ${context} select voicepilot_safety.record_provider_usage('${org}','${uuid()}','${leaseOne}',4,10); commit;`);
+  if (!/usage_limit/.test(usageDenied)) throw new Error(`usage boundary was not enforced: ${usageDenied}`);
+  if (!/t|true/.test(run(db, `begin; ${context} select voicepilot_safety.release_provider_usage('${org}','${usageEvent}'); commit;`))) throw new Error("usage release failed");
+  run(db, `update public.provider_safety_controls set emergency_stop=true where organization_id='${org}'`);
+  const stoppedLease = run(db, `begin; ${context} select voicepilot_safety.reserve_provider_session('${org}','${agent}','${uuid()}',clock_timestamp()+interval '5 minutes',1,1); commit;`);
+  if (!/unauthorized_or_unavailable/.test(stoppedLease)) throw new Error(`emergency stop did not block lease: ${stoppedLease}`);
   console.log("LINUX_SESSION_ADMISSION_OK pre-commit crash rollback, post-commit lost-result recovery, replay, revoke/consume race, audit-fault rollback and database-unavailable checks passed");
 } finally { if (created) { try { execFileSync("dropdb", ["-h", base.host, "-p", base.port, "-U", base.user, "--if-exists", db], { env, timeout: 30_000, stdio: "ignore" }); } catch { process.exitCode = 1; } } }
