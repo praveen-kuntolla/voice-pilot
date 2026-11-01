@@ -69,12 +69,12 @@ try {
   run(db, "drop trigger test_fail_consumed_audit on public.voice_session_audit_events; drop function public.test_fail_consumed_audit();");
   const retryAfterFault = run(db, `begin; ${context} select public.consume_voice_session_authorization('${faultAssertion}','${org}','${actor}',clock_timestamp(),10,36000); commit;`);
   if (!/\"ok\"\s*:\s*true/.test(retryAfterFault)) throw new Error(`same authorization could not retry after rollback: ${retryAfterFault}`);
-  const leaseOne = uuid(), leaseTwo = uuid();
-  const leaseSql = (session) => `begin; ${context} select voicepilot_safety.reserve_provider_session('${org}','${agent}','${session}',clock_timestamp()+interval '5 minutes',1,1); commit;`;
+  const leaseOne = uuid(), leaseTwo = uuid(), leaseExpires = new Date(Date.now() + 300_000).toISOString();
+  const leaseSql = (session) => `begin; ${context} select voicepilot_safety.reserve_provider_session('${org}','${agent}','${session}','${leaseExpires}',1,1); commit;`;
   const leaseResults = await Promise.all([spawnPsql(db, leaseSql(leaseOne)), spawnPsql(db, leaseSql(leaseTwo))]);
   if (leaseResults.filter(({ output }) => /\"ok\"\s*:\s*true/.test(output)).length !== 1) throw new Error("organization concurrency limit was not enforced atomically");
   const activeLease = psql(db, `select session_id from voicepilot_safety.provider_session_reservations where organization_id='${org}' and state='active' limit 1`);
-  const duplicateLease = run(db, `begin; ${context} select voicepilot_safety.reserve_provider_session('${org}','${agent}','${activeLease}',(select expires_at from voicepilot_safety.provider_session_reservations where session_id='${activeLease}'),1,1); commit;`);
+  const duplicateLease = run(db, `begin; ${context} select voicepilot_safety.reserve_provider_session('${org}','${agent}','${activeLease}','${leaseExpires}',1,1); commit;`);
   if (!/\"reused\"\s*:\s*true/.test(duplicateLease)) throw new Error(`duplicate session reservation was not idempotent: ${duplicateLease}`);
   if (!/t|true/.test(run(db, `begin; ${context} select voicepilot_safety.release_provider_session('${org}','${activeLease}','released'); commit;`))) throw new Error("session release failed");
   if (!/f|false/.test(run(db, `begin; ${context} select voicepilot_safety.release_provider_session('${org}','${activeLease}','released'); commit;`))) throw new Error("session release was not idempotent");
