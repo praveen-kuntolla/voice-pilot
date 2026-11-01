@@ -2,9 +2,9 @@ name: Phase 11B.5 Linux security acceptance
 
 on:
   push:
-    branches: [feature/phase-11b5-linux-security-acceptance, feature/phase-11b6-transaction-security-acceptance]
+    branches: [feature/phase-11b5-linux-security-acceptance, feature/phase-11b6-transaction-security-acceptance, feature/phase-11c-durable-usage-safety]
   pull_request:
-    branches: [feature/phase-11b2-distributed-admission-verification]
+    branches: [feature/phase-11b2-distributed-admission-verification, feature/phase-11b6-transaction-security-acceptance]
 
 permissions:
   contents: read
