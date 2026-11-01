@@ -3,6 +3,7 @@ import { currentMembership } from "@/lib/authz";
 import { createLiveKitToken, getLiveKitConfiguration, voiceRoomName } from "@/lib/livekit";
 import { registerIssuedRoom } from "@/lib/livekit-room-auth";
 import { browserVoiceSessionRequestSchema, isBrowserVoiceActivationEnabled } from "@/lib/browser-voice-session";
+import { isDurableBrowserAdmissionWired } from "@/lib/durable-browser-admission";
 import { randomUUID } from "node:crypto";
 
 /** Future browser voice path. It is server-gated and disabled by default. */
@@ -13,6 +14,7 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!membership) return NextResponse.json({ error: "Organization required" }, { status: 403 });
   if (!isBrowserVoiceActivationEnabled()) return NextResponse.json({ error: "Browser voice activation is disabled" }, { status: 503 });
+  if (!isDurableBrowserAdmissionWired()) return NextResponse.json({ error: "Durable voice admission is unavailable" }, { status: 503 });
   const parsed = browserVoiceSessionRequestSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Explicit microphone consent and a valid agent are required" }, { status: 400 });
   const { data, error } = await s.from("agents").select("id").eq("id", parsed.data.agent_id).eq("organization_id", membership.organization_id).maybeSingle();

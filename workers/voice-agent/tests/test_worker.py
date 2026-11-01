@@ -8,7 +8,7 @@ from voice_agent.config import load_config, validate_connectivity_config
 from voice_agent.runtime import RuntimeConfig
 from voice_agent.service_client import runtime_config_from_response, signed_config_request, validate_config_endpoint
 from voice_agent.providers import ProviderBundle, MockLLM, MockSTT, MockTTS
-from voice_agent.worker import AgentSessionPlan, build_agent_session, build_agent_session_plan, build_worker_plan, create_livekit_server, load_runtime_config, parse_room_name, run_connectivity_session, validate_agent_identity
+from voice_agent.worker import AgentSessionPlan, build_agent_session, build_agent_session_plan, build_worker_plan, create_livekit_server, load_runtime_config, parse_room_name, run_agent_session, run_connectivity_session, validate_agent_identity
 
 ORG = "11111111-1111-4111-8111-111111111111"
 AGENT = "22222222-2222-4222-8222-222222222222"
@@ -75,6 +75,36 @@ def test_agent_identity_is_bound_to_authorized_browser_session():
     plan = AgentSessionPlan(parse_room_name(ROOM), runtime, runtime.instructions)
     validate_agent_identity(plan, "browser")
     with pytest.raises(PermissionError): validate_agent_identity(plan, "other-user")
+
+def test_agent_session_releases_after_success_failure_and_cancellation():
+    class Session:
+        def __init__(self, fail=False): self.fail = fail; self.closed = False
+        async def start(self, **kwargs):
+            if self.fail: raise RuntimeError("session failed")
+        async def generate_reply(self, **kwargs): raise asyncio.CancelledError()
+        async def aclose(self): self.closed = True
+    plan = AgentSessionPlan(parse_room_name(ROOM), RuntimeConfig(ORG, AGENT, "en", "Safe", session_id=SESSION), "Safe")
+    released = []
+    async def release(value): released.append(value.room.session_id); return True
+    with pytest.raises(asyncio.CancelledError): asyncio.run(run_agent_session(Session(), object(), object(), plan, release))
+    assert released == [SESSION]
+    failed = Session(fail=True)
+    with pytest.raises(RuntimeError): asyncio.run(run_agent_session(failed, object(), object(), plan, release))
+    assert released == [SESSION, SESSION]
+
+def test_agent_session_fails_closed_when_release_is_not_confirmed():
+    class Session:
+        async def start(self, **kwargs): pass
+        async def generate_reply(self, **kwargs): pass
+        async def aclose(self): pass
+    plan = AgentSessionPlan(parse_room_name(ROOM), RuntimeConfig(ORG, AGENT, "en", "Safe", session_id=SESSION), "Safe")
+    async def release(_): return False
+    with pytest.raises(RuntimeError, match="release"):
+        asyncio.run(run_agent_session(Session(), object(), object(), plan, release))
+
+def test_realtime_server_refuses_missing_release_contract():
+    with pytest.raises(RuntimeError, match="release contract"):
+        create_livekit_server(enabled_config(), lambda *_: None)
 
 def test_service_response_is_minimal_and_tenant_bound():
     result = runtime_config_from_response({"agent": {"id": AGENT, "organization_id": ORG, "language": "en", "instructions": "Be safe", "voice_id": "mock"}}, ORG, AGENT)

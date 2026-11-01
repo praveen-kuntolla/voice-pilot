@@ -42,6 +42,10 @@ class AgentSessionFactory(Protocol):
     def __call__(self, **kwargs: Any) -> Any: ...
 
 
+class ReservationReleaser(Protocol):
+    async def __call__(self, plan: AgentSessionPlan) -> bool: ...
+
+
 def build_agent_session(
     session_factory: AgentSessionFactory,
     providers: Any,
@@ -66,6 +70,19 @@ def build_agent_session(
 def validate_agent_identity(plan: AgentSessionPlan, participant_identity: str) -> None:
     if not participant_identity or participant_identity != plan.runtime.authorized_browser_identity:
         raise PermissionError("worker participant identity is not authorized for this session")
+
+
+async def run_agent_session(session: Any, agent: Any, room: Any, plan: AgentSessionPlan, release: ReservationReleaser) -> None:
+    """Run and durably release one authorized session on every exit path."""
+    try:
+        await session.start(room=room, agent=agent)
+        await session.generate_reply(instructions=f"Greet the user in {plan.runtime.language}.")
+    finally:
+        close = getattr(session, "aclose", None)
+        if close is not None:
+            await close()
+        if not await release(plan):
+            raise RuntimeError("durable worker reservation release was not confirmed")
 
 
 async def build_agent_session_plan(loader: ConfigLoader, room_name: str) -> AgentSessionPlan:
@@ -93,7 +110,7 @@ async def load_runtime_config(loader: ConfigLoader, room_name: str) -> RuntimeCo
         raise PermissionError("worker configuration tenant mismatch")
     return runtime
 
-def create_livekit_server(config: WorkerConfig, loader: ConfigLoader):
+def create_livekit_server(config: WorkerConfig, loader: ConfigLoader, release_session: ReservationReleaser | None = None):
     """Create the official AgentServer only when explicit realtime config is valid.
 
     This function is not called by local mock mode. The API shape follows the
@@ -104,6 +121,8 @@ def create_livekit_server(config: WorkerConfig, loader: ConfigLoader):
         validate_connectivity_config(config)
     else:
         validate_realtime_config(config)
+        if release_session is None:
+            raise RuntimeError("trusted worker reservation release contract is unavailable")
         # No approved real provider adapters exist yet. Fail before registering
         # a job so a worker cannot connect and then fail during session setup.
         build_provider_bundle(ProviderConfig(config.stt_provider or "", config.llm_provider or "", config.tts_provider or ""), mode="real")
@@ -135,15 +154,7 @@ def create_livekit_server(config: WorkerConfig, loader: ConfigLoader):
         )
         session = build_agent_session(AgentSession, providers)
         agent = Agent(instructions=plan.instructions)
-        try:
-            await session.start(room=ctx.room, agent=agent)
-            await session.generate_reply(instructions=f"Greet the user in {plan.runtime.language}.")
-        except asyncio.CancelledError:
-            raise
-        finally:
-            close = getattr(session, "aclose", None)
-            if close is not None:
-                await close()
+        await run_agent_session(session, agent, ctx.room, plan, release_session)
 
     return server, cli
 

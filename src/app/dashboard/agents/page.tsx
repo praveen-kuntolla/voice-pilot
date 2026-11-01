@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Bot, Mic2, ShieldCheck } from "lucide-react";
 import { AgentProviderGovernance } from "@/components/agent-provider-governance";
 import { VoiceSandboxPreparation } from "@/components/voice-sandbox-preparation";
+import { voiceProfileLanguageStatus, voiceProfileState, SUPPORTED_MOCK_VOICE_ID } from "@/lib/voice-profile";
 
 type Agent = { id: string; name: string; instructions: string; language: string; voice_id?: string; status: string };
 const empty = { name: "", instructions: "", language: "en-US", voice_id: "", status: "draft" };
@@ -20,7 +21,16 @@ export default function Agents() {
 
   useEffect(() => { fetch("/api/agents").then(async (response) => {
     const body = await response.json();
-    if (response.ok) setAgents(body.agents || []); else setError(body.error || "Unable to load agents");
+    if (response.ok) {
+      const loadedAgents = body.agents || [];
+      setAgents(loadedAgents);
+      const requestedEdit = new URLSearchParams(window.location.search).get("edit");
+      const requestedAgent = loadedAgents.find((agent: Agent) => agent.id === requestedEdit && agent.status !== "archived");
+      if (requestedAgent) {
+        setEditing(requestedAgent.id);
+        setForm({ name: requestedAgent.name, instructions: requestedAgent.instructions || "", language: requestedAgent.language || "en-US", voice_id: requestedAgent.voice_id || "", status: requestedAgent.status || "draft" });
+      }
+    } else setError(body.error || "Unable to load agents");
   }).catch(() => setError("Unable to load agents")).finally(() => setLoading(false)); }, []);
 
   function update<K extends keyof typeof empty>(key: K, value: typeof empty[K]) { setForm((current) => ({ ...current, [key]: value })); }
@@ -52,7 +62,7 @@ export default function Agents() {
           <label className="label">Agent name<input className="input" value={form.name} onChange={(event) => update("name", event.target.value)} required minLength={2} /></label>
           <label className="label">System instructions<textarea className="textarea" value={form.instructions} onChange={(event) => update("instructions", event.target.value)} maxLength={10000} /></label>
           <label className="label">Language<select className="select" value={form.language} onChange={(event) => update("language", event.target.value)}><option value="en-US">English (US)</option><option value="en-GB">English (UK)</option><option value="hi-IN">Hindi</option></select></label>
-          <label className="label">Voice<select className="select" value={form.voice_id} onChange={(event) => update("voice_id", event.target.value)}><option value="">Provider voice — not connected</option><option value="safe-demo">Safe demo voice</option></select></label>
+          <label className="label">Voice profile · mock only<select className="select" value={form.voice_id} onChange={(event) => update("voice_id", event.target.value)}><option value="">No profile assigned</option><option value="safe-demo">Safe demo voice</option></select></label>
           <label className="label">Status<select className="select" value={form.status} onChange={(event) => update("status", event.target.value)}><option value="draft">Draft</option><option value="active">Active (configuration only)</option><option value="archived">Archived</option></select></label>
           <button className="btn primary" disabled={busy}>{busy ? "Saving…" : editing ? "Save changes" : "Create draft agent"}</button>
           {editing && <button type="button" className="btn ghost" onClick={() => { setEditing(null); setForm(empty); }}>Cancel</button>}
@@ -61,8 +71,11 @@ export default function Agents() {
         </form>
         <div className="card"><Mic2 className="icon" /><h3>Saved agents</h3>
           {loading ? <p className="muted">Loading agents…</p> : agents.length === 0 ? <p className="muted">No persisted agents yet.</p> : agents.map((agent) => <div className="card" style={{ padding: 14, marginTop: 10 }} key={agent.id}>
-            <strong>{agent.name}</strong><div className="muted">{agent.language} · {agent.voice_id || "No voice"} · {agent.status}</div>
+            <strong>{agent.name}</strong><div className="muted">{agent.language} · {agent.voice_id || "No voice profile assigned"} · {agent.status}</div>
+            <div className="muted" role="status">{voiceProfileState(agent.voice_id) === "missing" ? "No voice profile assigned." : voiceProfileState(agent.voice_id) === "unsupported" ? "Voice profile saved; preview unavailable." : `Mock voice · ${voiceProfileLanguageStatus(agent.voice_id, agent.language) === "compatible" ? "language compatible" : "language review required"}`}</div>
+            {agent.voice_id === SUPPORTED_MOCK_VOICE_ID && agent.status !== "archived" && <Link className="btn ghost" href={`/dashboard/agents/test?agent=${encodeURIComponent(agent.id)}&voice=preview`}>Preview voice (simulation)</Link>}
             <button className="btn ghost" type="button" onClick={() => { setEditing(agent.id); setForm({ name: agent.name, instructions: agent.instructions || "", language: agent.language || "en-US", voice_id: agent.voice_id || "", status: agent.status || "draft" }); }}>Edit</button>
+            {agent.status !== "archived" && <Link className="btn ghost" href={`/dashboard/agents/test?agent=${encodeURIComponent(agent.id)}`}>Test safely</Link>}
             {agent.status !== "archived" && <button className="btn ghost" type="button" onClick={() => void archive(agent.id)}>Archive</button>}
           </div>)}
           <div className="notice" style={{ marginTop: 18 }}><ShieldCheck size={16} /> Safe mode only. No paid provider or real calling action is available.</div>

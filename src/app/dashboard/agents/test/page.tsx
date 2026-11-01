@@ -31,10 +31,15 @@ export default function AgentTest() {
   useEffect(() => {
     mountedRef.current = true;
     const generation = ++generationRef.current;
+    const requestedAgentId = new URLSearchParams(window.location.search).get("agent");
     fetch("/api/agents", { cache: "no-store" }).then(async (response) => {
       const body = await response.json() as { agents?: Agent[]; error?: string };
       if (!response.ok) throw new Error(body.error ?? "Unable to load agents.");
-      if (mountedRef.current && generation === generationRef.current) setAgents(body.agents ?? []);
+      if (mountedRef.current && generation === generationRef.current) {
+        const loadedAgents = body.agents ?? [];
+        setAgents(loadedAgents);
+        if (requestedAgentId && loadedAgents.some((agent) => agent.id === requestedAgentId)) setAgentId(requestedAgentId);
+      }
     }).catch((cause: unknown) => { if (mountedRef.current && generation === generationRef.current) setLoadError(cause instanceof Error ? cause.message : "Unable to load agents."); })
       .finally(() => { if (mountedRef.current && generation === generationRef.current) setLoadingAgents(false); });
     return () => { mountedRef.current = false; generationRef.current++; preflightAbortRef.current?.abort(); controllerRef.current?.end(); controllerRef.current = null; };
