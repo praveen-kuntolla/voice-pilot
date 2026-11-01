@@ -183,7 +183,9 @@ jobs:
           echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
           echo "GATEWAY_DATABASE_URL=$DB_URL" >> "$GITHUB_ENV"
           echo "VOICE_OFFLINE_ADMISSION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "CI_E2E_FIXTURE_STATE=$RUNNER_TEMP/voicepilot-fixtures.json" >> "$GITHUB_ENV"
       - name: Provision synthetic disposable fixtures
+        id: provision
         run: node scripts/ci-authenticated-voice-fixtures.mjs setup
       - name: Clone disposable gateway database
         shell: bash
@@ -219,7 +221,7 @@ jobs:
         run: |
           if test -f "$RUNNER_TEMP/voicepilot-next.pid"; then kill "$(cat "$RUNNER_TEMP/voicepilot-next.pid")" 2>/dev/null || true; fi
       - name: Cleanup disposable fixtures
-        if: always()
+        if: always() && steps.provision.outcome != 'skipped'
         run: node scripts/ci-authenticated-voice-fixtures.mjs cleanup
       - name: Verify no fixture metadata remains
         if: always()

@@ -134,3 +134,8 @@ state. It does not request microphone access or contact any provider.
 
 The test also exposed and corrected a contract defect: the start response now
 returns the `assertionId` required by the cancellation endpoint.
+
+The Linux CI install initially failed because the Windows-only Next SWC binary
+was declared as a mandatory dependency. It is now an optional platform-specific
+dependency, so `npm ci` can install the locked graph on Ubuntu while Windows
+continues to receive the optimized binary.
