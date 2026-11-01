@@ -173,13 +173,14 @@ jobs:
         shell: bash
         run: |
           npx supabase status -o env > "$RUNNER_TEMP/supabase.env"
-          api_url=$(grep '^API_URL=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)
-          anon_key=$(grep '^ANON_KEY=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)
-          service_role_key=$(grep '^SERVICE_ROLE_KEY=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)
-          db_url=$(grep '^DB_URL=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)
+          clean_value() { value="$1"; value="${value#\"}"; value="${value%\"}"; printf '%s' "$value"; }
+          api_url=$(clean_value "$(grep '^API_URL=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)")
+          anon_key=$(clean_value "$(grep '^ANON_KEY=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)")
+          service_role_key=$(clean_value "$(grep '^SERVICE_ROLE_KEY=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)")
+          db_url=$(clean_value "$(grep '^DB_URL=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)")
           for value in "$api_url" "$anon_key" "$service_role_key" "$db_url"; do test -n "$value"; done
           for key in API_URL ANON_KEY SERVICE_ROLE_KEY DB_URL; do
-            value=$(grep "^${key}=" "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)
+            value=$(clean_value "$(grep "^${key}=" "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)")
             test -n "$value"
             echo "$key=$value" >> "$GITHUB_ENV"
           done
