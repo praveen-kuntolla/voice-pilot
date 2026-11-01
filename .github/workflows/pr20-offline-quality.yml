@@ -208,7 +208,7 @@ jobs:
       - name: Start isolated Next.js server
         shell: bash
         run: |
-          npm run dev -- -H 127.0.0.1 -p 3100 > "$RUNNER_TEMP/voicepilot-next.log" 2>&1 &
+          NODE_ENV=development npm run dev -- -H 127.0.0.1 -p 3100 > "$RUNNER_TEMP/voicepilot-next.log" 2>&1 &
           echo $! > "$RUNNER_TEMP/voicepilot-next.pid"
           for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:3100/api/health >/dev/null; then exit 0; fi
