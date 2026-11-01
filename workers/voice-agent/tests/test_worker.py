@@ -7,7 +7,8 @@ import pytest
 from voice_agent.config import load_config, validate_connectivity_config
 from voice_agent.runtime import RuntimeConfig
 from voice_agent.service_client import runtime_config_from_response, signed_config_request, validate_config_endpoint
-from voice_agent.worker import AgentSessionPlan, build_agent_session_plan, build_worker_plan, create_livekit_server, load_runtime_config, parse_room_name, run_connectivity_session
+from voice_agent.providers import ProviderBundle, MockLLM, MockSTT, MockTTS
+from voice_agent.worker import AgentSessionPlan, build_agent_session, build_agent_session_plan, build_worker_plan, create_livekit_server, load_runtime_config, parse_room_name, run_connectivity_session, validate_agent_identity
 
 ORG = "11111111-1111-4111-8111-111111111111"
 AGENT = "22222222-2222-4222-8222-222222222222"
@@ -60,6 +61,20 @@ def test_agent_session_plan_is_tenant_bound_without_activating_providers():
     assert plan.room.organization_id == ORG
     assert plan.room.agent_id == AGENT
     assert plan.instructions == "Safe instructions"
+
+def test_agent_session_factory_wires_adapters_and_turn_controls_without_provider_calls():
+    captured = {}
+    def factory(**kwargs): captured.update(kwargs); return object()
+    providers = ProviderBundle(MockSTT(), MockLLM(), MockTTS())
+    session = build_agent_session(factory, providers, vad="fake-vad", turn_detection="fake-turn")
+    assert session is not None
+    assert captured == {"stt": providers.stt, "llm": providers.llm, "tts": providers.tts, "vad": "fake-vad", "turn_detection": "fake-turn"}
+
+def test_agent_identity_is_bound_to_authorized_browser_session():
+    runtime = RuntimeConfig(ORG, AGENT, "en-US", "Safe", authorized_browser_identity="browser", session_id=SESSION)
+    plan = AgentSessionPlan(parse_room_name(ROOM), runtime, runtime.instructions)
+    validate_agent_identity(plan, "browser")
+    with pytest.raises(PermissionError): validate_agent_identity(plan, "other-user")
 
 def test_service_response_is_minimal_and_tenant_bound():
     result = runtime_config_from_response({"agent": {"id": AGENT, "organization_id": ORG, "language": "en", "instructions": "Be safe", "voice_id": "mock"}}, ORG, AGENT)

@@ -4,7 +4,7 @@ The module is safe to import without livekit-agents installed. Framework imports
 and server startup occur only after both worker and realtime flags are enabled.
 """
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 import asyncio
 import json
 import re
@@ -36,6 +36,36 @@ class AgentSessionPlan:
     room: RoomConfig
     runtime: RuntimeConfig
     instructions: str
+
+
+class AgentSessionFactory(Protocol):
+    def __call__(self, **kwargs: Any) -> Any: ...
+
+
+def build_agent_session(
+    session_factory: AgentSessionFactory,
+    providers: Any,
+    *,
+    vad: Any = None,
+    turn_detection: Any = None,
+) -> Any:
+    """Construct the official AgentSession shape without importing providers.
+
+    The production caller supplies LiveKit's AgentSession class only after the
+    existing realtime/provider gates pass. Tests inject a fake factory, so this
+    orchestration path never contacts a provider in the default environment.
+    """
+    options: dict[str, Any] = {"stt": providers.stt, "llm": providers.llm, "tts": providers.tts}
+    if vad is not None:
+        options["vad"] = vad
+    if turn_detection is not None:
+        options["turn_detection"] = turn_detection
+    return session_factory(**options)
+
+
+def validate_agent_identity(plan: AgentSessionPlan, participant_identity: str) -> None:
+    if not participant_identity or participant_identity != plan.runtime.authorized_browser_identity:
+        raise PermissionError("worker participant identity is not authorized for this session")
 
 
 async def build_agent_session_plan(loader: ConfigLoader, room_name: str) -> AgentSessionPlan:
@@ -96,15 +126,24 @@ def create_livekit_server(config: WorkerConfig, loader: ConfigLoader):
         if connectivity:
             await run_connectivity_session(ctx, loader, AutoSubscribe.SUBSCRIBE_NONE)
             return
-        runtime = await load_runtime_config(loader, ctx.room.name)
+        plan = await build_agent_session_plan(loader, ctx.room.name)
+        participant = await ctx.wait_for_participant()
+        validate_agent_identity(plan, participant.identity)
         providers = build_provider_bundle(
             ProviderConfig(stt=config.stt_provider or "", llm=config.llm_provider or "", tts=config.tts_provider or ""),
             mode=config.provider_mode,
         )
-        session = AgentSession(stt=providers.stt, llm=providers.llm, tts=providers.tts)
-        agent = Agent(instructions=runtime.instructions)
-        await session.start(room=ctx.room, agent=agent)
-        await session.generate_reply(instructions=f"Greet the user in {runtime.language}.")
+        session = build_agent_session(AgentSession, providers)
+        agent = Agent(instructions=plan.instructions)
+        try:
+            await session.start(room=ctx.room, agent=agent)
+            await session.generate_reply(instructions=f"Greet the user in {plan.runtime.language}.")
+        except asyncio.CancelledError:
+            raise
+        finally:
+            close = getattr(session, "aclose", None)
+            if close is not None:
+                await close()
 
     return server, cli
 
