@@ -31,7 +31,7 @@ try {
   await new Promise((resolvePromise) => beforeCommit.once("close", resolvePromise));
   if (run(db, `select count(*) from public.voice_session_authorizations where assertion_id='${assertion}' and consumed_at is not null;`) !== "0") throw new Error("pre-commit crash leaked consumption");
   const recovered = run(db, `begin; ${context} select public.consume_voice_session_authorization('${assertion}','${org}','${actor}',clock_timestamp(),1,3600); commit;`);
-  if (!recovered.includes('"reused":false')) throw new Error("post-crash retry did not consume once");
+  if (!/"reused"\s*:\s*false/.test(recovered)) throw new Error("post-crash retry did not consume once");
   run(db, `begin; ${context} select public.create_voice_session_authorization('${committedAuth}','${org}','${agent}','${actor}','${committedSession}','${committedAssertion}',clock_timestamp(),clock_timestamp()+interval '5 minutes'); select public.consume_voice_session_authorization('${committedAssertion}','${org}','${actor}',clock_timestamp(),1,3600); commit;`);
   const lostResult = spawn("psql", ["-X", "-v", "ON_ERROR_STOP=1", "-h", base.host, "-p", base.port, "-U", base.user, "-d", db, "-At", "-c", `select public.consume_voice_session_authorization('${committedAssertion}','${org}','${actor}',clock_timestamp(),1,3600); select pg_sleep(30);`], { env, stdio: ["ignore", "pipe", "pipe"] });
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 400)); killOwned(lostResult); await new Promise((resolvePromise) => lostResult.once("close", resolvePromise));
