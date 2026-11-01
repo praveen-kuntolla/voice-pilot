@@ -24,7 +24,7 @@ jobs:
           --health-interval=5s --health-timeout=5s --health-retries=12
     steps:
       - uses: actions/checkout@v4
-      - run: npm ci
+      - run: npm ci --force
       - run: node scripts/test-session-admission-linux.mjs
         env:
           PGHOST: 127.0.0.1
