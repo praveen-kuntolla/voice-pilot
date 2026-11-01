@@ -38,9 +38,10 @@ Draft PR. This branch targets `feature/phase-12b-runtime-readiness`.
 | PostgreSQL authorization consumption | IMPLEMENTED OFFLINE | `PostgresTransactionExecutor` and reviewed SQL adapter |
 | Tenant isolation and replay checks | VERIFIED IN PARENT CI | PR #46 disposable Linux acceptance evidence |
 | Cancellation and idempotent release | IMPLEMENTED OFFLINE | PostgreSQL release adapter |
-| Runtime route against disposable Auth/PostgreSQL | NOT VERIFIED HERE | Approved fixture metadata unavailable |
-| Authenticated Playwright lifecycle | NOT RUN | `.local/voicepilot-local-loopback-fixtures.json` absent |
-| Disposable PostgreSQL rerun | NOT RUN | Docker CLI unavailable; no safe target could be established |
+| Runtime route against disposable Auth/PostgreSQL | VERIFIED | Exact-head Linux CI run 41294145361 |
+| Authenticated Playwright lifecycle | VERIFIED | 1 passed, 0 failed, 1 worker; real browser login, admission, cancellation and DB assertions |
+| Disposable PostgreSQL restore and integrity | VERIFIED | Randomized gateway DB restored from disposable Supabase DB; required routines and synthetic org/agent assertions passed |
+| Fixture and database teardown | VERIFIED | Synthetic fixtures cleaned, gateway DB dropped and absence checked, Supabase stopped |
 | LiveKit room/token creation | DISABLED | Explicitly outside this milestone |
 | Microphone, STT, LLM, TTS and audio | DISABLED | No provider requests or audio capture |
 
@@ -93,29 +94,35 @@ are complete and explicitly approved:
 - Provider-specific STT/LLM/TTS failure, interruption and cancellation paths
   are tested without customer data or telephony.
 
-## Exact current blocker
+## Exact current verification
 
-At the time of this handoff, the worktree contains no approved fixture metadata
-and the `docker` executable is unavailable. Authenticated Playwright and fresh
-disposable PostgreSQL acceptance are therefore **NOT RUN**, not passed.
+PR #48 is OPEN and DRAFT, targets `feature/phase-12b-runtime-readiness`, and
+is mergeable at head `5db562a0dd4e87ad2e4f1fe250a202304b684557`. Exact-head
+workflow [41294145361](https://github.com/praveen-kuntolla/voice-pilot/actions/runs/41294145361)
+passed all four jobs: offline TypeScript/ESLint/Vitest/build, Python worker
+tests, synthetic Chromium, and `authenticated-voice-postgres-e2e`.
 
-## Fresh local checks on this branch
+The authenticated job used an Ubuntu-hosted disposable Supabase stack and a
+randomized gateway database. The restore uses an intermediate dump file,
+removes only the verified unsupported `log_min_messages` session settings,
+excludes only `vault.secrets` data, then asserts the authorization routines and
+synthetic organization/agent rows before starting Next.js. Generated secrets,
+fixture passwords and service keys were masked in Actions output. Teardown
+removed fixtures, dropped and verified the randomized database, and stopped
+Supabase successfully.
 
-- Python worker tests: **67 passed** from `workers/voice-agent`.
-- ESLint: **passed**.
-- Vitest: **NOT VERIFIED** in this worktree because the sandbox denied creation
-  of `node_modules/.vitest-cache`; the parent branch's applicable result was
-  293 passed / 21 skipped.
-- TypeScript: **NOT VERIFIED** because the sandbox denied writing the existing
-  `tsconfig.tsbuildinfo`; the parent branch's applicable result was passed.
-- Production build: **NOT VERIFIED** because the sandbox denied creating the
-  Next.js build directory; the parent branch's applicable result was passed.
+## Fresh verification on the exact head
+
+- GitHub Actions run 41294145361: **all four jobs passed**.
+- Authenticated Playwright: **1 passed / 0 failed / 0 skipped**.
+- TypeScript, ESLint, Vitest, production build, Python worker tests and
+  synthetic Chromium: **passed in exact-head CI**.
 - `git diff --check`: **passed**.
 
-The workflow trigger was extended for the Phase 12B stacked base and this
-acceptance branch. It does not silently claim authenticated acceptance: that
-job still requires approved disposable Auth/PostgreSQL fixtures and must be
-added or run only once that environment can be verified.
+The local Windows worktree was not used to reclassify CI results because its
+generated-file writes remain restricted. Push and pull-request runs are
+serialized by branch so fixed Supabase loopback ports cannot race; restore,
+SQL integrity assertions, test failure and teardown failure are all fatal.
 
 ## PR #48 acceptance implementation
 
@@ -139,3 +146,52 @@ The Linux CI install initially failed because the Windows-only Next SWC binary
 was declared as a mandatory dependency. It is now an optional platform-specific
 dependency, so `npm ci` can install the locked graph on Ubuntu while Windows
 continues to receive the optimized binary.
+
+## Control evidence classification
+
+| Control | Classification | Human review question |
+| --- | --- | --- |
+| Authenticated membership and agent ownership | VERIFIED offline | Are all production entry points equally protected? |
+| Signed admission and tenant binding | VERIFIED offline / partially durable | Are key rotation, clock handling and worker deployment boundaries approved? |
+| PostgreSQL authorization, reservation and idempotent release | VERIFIED in disposable CI | Are migrations, privileges, RLS and rollback suitable for the intended production role? |
+| CI dump/restore isolation and secret masking | VERIFIED in exact-head CI | Does the reviewer accept the `vault.secrets` data exclusion and dump-derived privilege model? |
+| Emergency stop | PARTIALLY VERIFIED | What provider-side disconnect is authoritative after a live session starts? |
+| Usage/concurrency ceilings | PARTIALLY VERIFIED | Are provider billing reconciliation and hard spend enforcement independently proven? |
+| Browser-to-PostgreSQL offline lifecycle | VERIFIED | Does the reviewer accept the single synthetic-session scope as sufficient evidence? |
+| LiveKit/STT/LLM/TTS connectivity | NOT VERIFIED | Which provider stack and retention terms are approved? |
+| Audio/transcript retention | REQUIRES HUMAN REVIEW | Is no-recording the default, and who owns deletion/exception handling? |
+| Production operations and rollback | REQUIRES HUMAN REVIEW | Who can stop, drain, reconcile and roll back the live sandbox? |
+
+## Independent reviewer assignments
+
+PR #48 currently has no submitted reviews. The owner should nominate:
+
+1. **PostgreSQL/Supabase security reviewer** — migrations 017–019, RLS,
+   `SECURITY DEFINER`, `search_path`, service-role privileges, tenant context,
+   replay/expiry and transaction rollback.
+2. **LiveKit/voice-platform security reviewer** — room admission, participant
+   termination, worker identity, interruption, provider outage and emergency
+   disconnect.
+3. **Privacy/retention owner** — microphone consent, no-recording default,
+   transcript/audio retention, deletion and provider terms.
+4. **Operations/emergency-stop owner** — monitoring, alerting, credential
+   rotation, stop authority, cleanup and rollback runbook.
+5. **Billing/spend owner** — provider quotas, three-minute cap, one-session
+   concurrency, usage reconciliation and maximum spend.
+6. **Project owner** — provider selection, test identity, egress, dates,
+   approvals and final GO decision.
+
+## First browser voice experiment approval envelope
+
+The proposed experiment is browser-only and synthetic: one authorized test user,
+one synthetic agent, one concurrent session, a three-minute hard limit, explicit
+microphone consent, no recording by default, server-only credentials,
+provider-specific spend caps, durable usage reconciliation, monitoring and an
+emergency disconnect test. LiveKit transport and separate STT/LLM/TTS providers
+remain a proposal; no account, key, room or microphone path is enabled by PR #48.
+
+Before activation, the owner must approve provider selection and pricing,
+credential storage and rotation, network egress, retention/deletion policy,
+provider quotas, emergency disconnect and rollback owners, and the exact
+synthetic identity. Independent PostgreSQL and voice-platform reviewers must
+record approval. Until then the decision is **NO-GO**.
