@@ -47,7 +47,6 @@ begin
     or p_max_agent is null or p_max_agent < 1 or p_max_agent > 100
     or nullif(current_setting('voicepilot.organization_id',true),'')::uuid is distinct from p_org
     or not exists(select 1 from public.agents a where a.id=p_agent and a.organization_id=p_org)
-    or not voicepilot_safety.safety_enabled(p_org)
     then return jsonb_build_object('ok',false,'error','unauthorized_or_unavailable'); end if;
   perform pg_advisory_xact_lock(hashtextextended('session:'||p_org::text,0));
   perform pg_advisory_xact_lock(hashtextextended('agent:'||p_agent::text,0));
@@ -59,6 +58,7 @@ begin
     if existing.state='active' and existing.expires_at>clock_timestamp() then return jsonb_build_object('ok',true,'reused',true); end if;
     return jsonb_build_object('ok',false,'error','terminal_session');
   end if;
+  if not voicepilot_safety.safety_enabled(p_org) then return jsonb_build_object('ok',false,'error','unauthorized_or_unavailable'); end if;
   select count(*) into org_count from voicepilot_safety.provider_session_reservations where organization_id=p_org and state='active' and expires_at>clock_timestamp();
   select count(*) into agent_count from voicepilot_safety.provider_session_reservations where agent_id=p_agent and state='active' and expires_at>clock_timestamp();
   if org_count>=p_max_org then return jsonb_build_object('ok',false,'error','organization_concurrency'); end if;
