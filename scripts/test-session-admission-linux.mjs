@@ -92,6 +92,7 @@ try {
   const stoppedLease = run(db, `begin; ${context} select voicepilot_safety.reserve_provider_session('${org}','${agent}','${uuid()}',clock_timestamp()+interval '5 minutes',1,1); commit;`);
   if (!/unauthorized_or_unavailable/.test(stoppedLease)) throw new Error(`emergency stop did not block lease: ${stoppedLease}`);
   const gatewayUrl = `postgresql://${encodeURIComponent(base.user)}:${encodeURIComponent(base.password)}@${base.host}:${base.port}/${db}`;
+  run(db, `update public.provider_safety_controls set emergency_stop=false where organization_id='${org}'; update voicepilot_safety.provider_global_stop set emergency_stop=false where singleton=true; delete from voicepilot_safety.provider_usage_events where organization_id='${org}'; delete from voicepilot_safety.provider_session_reservations where organization_id='${org}'; update voicepilot_safety.provider_usage_accounts set reserved_cents=0,used_cents=0 where organization_id='${org}';`);
   const vitestEnv = { ...env, GATEWAY_DATABASE_URL: gatewayUrl, GATEWAY_ACTOR_ID: actor, GATEWAY_ORG_ID: org, GATEWAY_AGENT_ID: agent };
   execFileSync(process.execPath, [resolve("node_modules/vitest/vitest.mjs"), "run", "tests/postgres-voice-session-adapter.integration.test.ts"], { env: vitestEnv, stdio: "inherit", timeout: 60_000 });
   console.log("LINUX_SESSION_ADMISSION_OK SQL lifecycle, adapter acceptance, crash rollback, replay, revoke/consume race, audit-fault rollback and database-unavailable checks passed");
