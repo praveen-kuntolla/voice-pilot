@@ -208,7 +208,13 @@ jobs:
           gateway_db="vp_gateway_ci_${GITHUB_RUN_ID}"
           psql "$DB_URL" -v ON_ERROR_STOP=1 -c "create database ${gateway_db}"
           gateway_url="${DB_URL%/postgres}/${gateway_db}"
-          pg_dump --no-owner --no-privileges --no-comments "$DB_URL" | sed -E '/^[[:space:]]*SET[[:space:]]+log_min_messages[[:space:]]*=/d' | psql "$gateway_url" -v ON_ERROR_STOP=1
+          dump_file="$RUNNER_TEMP/voicepilot-gateway.sql"
+          pg_dump --no-owner --no-privileges --no-comments "$DB_URL" > "$dump_file"
+          match_count=$(grep -Ec '^[[:space:]]*SET[[:space:]]+log_min_messages([[:space:]]|=)' "$dump_file" || true)
+          test "$match_count" -gt 0
+          sed -i -E '/^[[:space:]]*SET[[:space:]]+log_min_messages([[:space:]]|=)/d' "$dump_file"
+          if grep -Eq '^[[:space:]]*SET[[:space:]]+log_min_messages([[:space:]]|=)' "$dump_file"; then echo "Unsupported log_min_messages statement remains in dump"; exit 1; fi
+          psql "$gateway_url" -v ON_ERROR_STOP=1 < "$dump_file"
           echo "GATEWAY_DATABASE_URL=$gateway_url" >> "$GITHUB_ENV"
           echo "CI_GATEWAY_DB=$gateway_db" >> "$GITHUB_ENV"
       - name: Build application
