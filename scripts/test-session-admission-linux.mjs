@@ -65,7 +65,7 @@ try {
   let auditFailed = false; try { run(db, `begin; ${context} select public.consume_voice_session_authorization('${faultAssertion}','${org}','${actor}',clock_timestamp(),10,36000); commit;`); } catch { auditFailed = true; }
   if (!auditFailed) throw new Error("audit fault injection did not fail closed");
   const rolledBack = psql(db, `select (consumed_at is null)::text || ':' || usage_reserved_seconds::text from public.voice_session_authorizations where assertion_id='${faultAssertion}'`);
-  if (rolledBack !== "t:0") throw new Error(`audit failure left a partial authorization reservation: ${rolledBack}`);
+  if (rolledBack !== "true:0") throw new Error(`audit failure left a partial authorization reservation: ${rolledBack}`);
   run(db, "drop trigger test_fail_consumed_audit on public.voice_session_audit_events; drop function public.test_fail_consumed_audit();");
   const retryAfterFault = run(db, `begin; ${context} select public.consume_voice_session_authorization('${faultAssertion}','${org}','${actor}',clock_timestamp(),10,36000); commit;`);
   if (!/\"ok\"\s*:\s*true/.test(retryAfterFault)) throw new Error(`same authorization could not retry after rollback: ${retryAfterFault}`);
