@@ -72,7 +72,7 @@ create or replace function public.revoke_voice_session_authorization(p_assertion
 returns boolean language plpgsql security definer set search_path=pg_catalog,public,auth as $$
 begin
   if nullif(current_setting('request.jwt.claim.sub',true),'')::uuid is distinct from p_actor_id or nullif(current_setting('voicepilot.organization_id',true),'')::uuid is distinct from p_organization_id then return false; end if;
-  update public.voice_session_authorizations set revoked_at=coalesce(revoked_at,clock_timestamp()) where assertion_id=p_assertion_id and organization_id=p_organization_id and actor_id=p_actor_id;
+  update public.voice_session_authorizations set revoked_at=clock_timestamp() where assertion_id=p_assertion_id and organization_id=p_organization_id and actor_id=p_actor_id and revoked_at is null;
   if not found then return false; end if;
   insert into public.voice_session_audit_events(authorization_id,organization_id,action) select authorization_id,organization_id,'revoked' from public.voice_session_authorizations where assertion_id=p_assertion_id and organization_id=p_organization_id;
   return true;
@@ -83,7 +83,7 @@ returns boolean language plpgsql security definer set search_path=pg_catalog,pub
 declare v public.voice_session_authorizations;
 begin
   if nullif(current_setting('request.jwt.claim.sub',true),'')::uuid is distinct from p_actor_id or nullif(current_setting('voicepilot.organization_id',true),'')::uuid is distinct from p_organization_id then return false; end if;
-  update public.voice_session_authorizations set released_at=coalesce(released_at,clock_timestamp()) where session_id=p_session_id and organization_id=p_organization_id and actor_id=p_actor_id returning * into v;
+  update public.voice_session_authorizations set released_at=clock_timestamp() where session_id=p_session_id and organization_id=p_organization_id and actor_id=p_actor_id and released_at is null returning * into v;
   if not found then return false; end if;
   insert into public.voice_session_audit_events(authorization_id,organization_id,action) values(v.authorization_id,v.organization_id,'released');
   return true;
