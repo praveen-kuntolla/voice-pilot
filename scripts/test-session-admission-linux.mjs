@@ -91,5 +91,8 @@ try {
   run(db, `update public.provider_safety_controls set emergency_stop=true where organization_id='${org}'`);
   const stoppedLease = run(db, `begin; ${context} select voicepilot_safety.reserve_provider_session('${org}','${agent}','${uuid()}',clock_timestamp()+interval '5 minutes',1,1); commit;`);
   if (!/unauthorized_or_unavailable/.test(stoppedLease)) throw new Error(`emergency stop did not block lease: ${stoppedLease}`);
-  console.log("LINUX_SESSION_ADMISSION_OK pre-commit crash rollback, post-commit lost-result recovery, replay, revoke/consume race, audit-fault rollback and database-unavailable checks passed");
+  const gatewayUrl = `postgresql://${encodeURIComponent(base.user)}:${encodeURIComponent(base.password)}@${base.host}:${base.port}/${db}`;
+  const vitestEnv = { ...env, GATEWAY_DATABASE_URL: gatewayUrl, GATEWAY_ACTOR_ID: actor, GATEWAY_ORG_ID: org, GATEWAY_AGENT_ID: agent };
+  execFileSync(process.execPath, [resolve("node_modules/vitest/vitest.mjs"), "run", "tests/postgres-voice-session-adapter.integration.test.ts"], { env: vitestEnv, stdio: "inherit", timeout: 60_000 });
+  console.log("LINUX_SESSION_ADMISSION_OK SQL lifecycle, adapter acceptance, crash rollback, replay, revoke/consume race, audit-fault rollback and database-unavailable checks passed");
 } finally { if (created) { try { execFileSync("dropdb", ["-h", base.host, "-p", base.port, "-U", base.user, "--if-exists", db], { env, timeout: 30_000, stdio: "ignore" }); } catch { process.exitCode = 1; } } }
