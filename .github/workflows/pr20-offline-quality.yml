@@ -8,6 +8,7 @@ on:
       - feature/phase-10b-sandbox-authorization
       - feature/phase-10b2-secure-livekit-admission
       - feature/phase-10b3-signed-worker-admission
+      - feature/phase-10b4-offline-admission-integration
   pull_request:
     branches:
       - master
@@ -15,6 +16,7 @@ on:
       - feature/phase-10a-provider-sandbox-readiness
       - feature/phase-10b-sandbox-authorization
       - feature/phase-10b2-secure-livekit-admission
+      - feature/phase-10b3-signed-worker-admission
     paths:
       - ".github/workflows/pr20-offline-quality.yml"
       - "src/app/dashboard/agents/test/**"

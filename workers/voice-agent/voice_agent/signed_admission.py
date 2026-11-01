@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import re
+import sys
 from typing import Any, Callable
 from uuid import UUID
 
@@ -34,3 +35,9 @@ def verify_signed_admission(assertion: Any, resolve_key: Callable[[str], str | N
     if not secret: return False
     expected = hmac.new(secret.encode(), canonical_admission(claims).encode(), hashlib.sha256).hexdigest()
     return hmac.compare_digest(expected, assertion["signature"])
+
+
+if __name__ == "__main__":
+    payload = json.load(sys.stdin)
+    ok = verify_signed_admission(payload, lambda key: payload.get("testSecret") if key == "test-key-1" else None, now_ms=1500, organization_id="org-a", agent_id="agent-a", actor_id="user-a")
+    print(json.dumps({"ok": ok}))
