@@ -98,3 +98,21 @@ are complete and explicitly approved:
 At the time of this handoff, the worktree contains no approved fixture metadata
 and the `docker` executable is unavailable. Authenticated Playwright and fresh
 disposable PostgreSQL acceptance are therefore **NOT RUN**, not passed.
+
+## Fresh local checks on this branch
+
+- Python worker tests: **67 passed** from `workers/voice-agent`.
+- ESLint: **passed**.
+- Vitest: **NOT VERIFIED** in this worktree because the sandbox denied creation
+  of `node_modules/.vitest-cache`; the parent branch's applicable result was
+  293 passed / 21 skipped.
+- TypeScript: **NOT VERIFIED** because the sandbox denied writing the existing
+  `tsconfig.tsbuildinfo`; the parent branch's applicable result was passed.
+- Production build: **NOT VERIFIED** because the sandbox denied creating the
+  Next.js build directory; the parent branch's applicable result was passed.
+- `git diff --check`: **passed**.
+
+The workflow trigger was extended for the Phase 12B stacked base and this
+acceptance branch. It does not silently claim authenticated acceptance: that
+job still requires approved disposable Auth/PostgreSQL fixtures and must be
+added or run only once that environment can be verified.

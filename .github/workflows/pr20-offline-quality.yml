@@ -13,6 +13,8 @@ on:
       - feature/phase-11b1-transactional-admission
       - feature/phase-11b2-distributed-admission-verification
       - feature/phase-10c-integration-hardening
+      - feature/phase-12b-runtime-readiness
+      - feature/phase-12b-authenticated-acceptance
       - feature/phase-11b-durable-session-authorization
       - feature/phase-11b1-transactional-admission
       - feature/phase-10c-integration-hardening
@@ -27,6 +29,7 @@ on:
       - feature/phase-10b4-offline-admission-integration
       - feature/phase-11b1-transactional-admission
       - feature/phase-11b2-distributed-admission-verification
+      - feature/phase-12b-runtime-readiness
     paths:
       - ".github/workflows/pr20-offline-quality.yml"
       - "src/app/dashboard/agents/test/**"
@@ -42,6 +45,7 @@ on:
       - "scripts/test-session-admission.mjs"
       - "src/lib/durable-session-authorization.ts"
       - "supabase/migrations/202610220017_durable_session_authorization.sql"
+      - "docs/phase-12b-security-acceptance-handoff.md"
   workflow_dispatch:
 
 permissions:
