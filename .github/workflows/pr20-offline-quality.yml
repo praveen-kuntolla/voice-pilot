@@ -209,12 +209,15 @@ jobs:
           psql "$DB_URL" -v ON_ERROR_STOP=1 -c "create database ${gateway_db}"
           gateway_url="${DB_URL%/postgres}/${gateway_db}"
           dump_file="$RUNNER_TEMP/voicepilot-gateway.sql"
-          pg_dump --no-owner --no-privileges --no-comments "$DB_URL" > "$dump_file"
+          pg_dump --no-owner --no-privileges --no-comments --exclude-table-data='vault.secrets' "$DB_URL" > "$dump_file"
           match_count=$(grep -Ec '^[[:space:]]*SET[[:space:]]+log_min_messages([[:space:]]|=)' "$dump_file" || true)
           test "$match_count" -gt 0
           sed -i -E '/^[[:space:]]*SET[[:space:]]+log_min_messages([[:space:]]|=)/d' "$dump_file"
           if grep -Eq '^[[:space:]]*SET[[:space:]]+log_min_messages([[:space:]]|=)' "$dump_file"; then echo "Unsupported log_min_messages statement remains in dump"; exit 1; fi
           psql "$gateway_url" -v ON_ERROR_STOP=1 < "$dump_file"
+          psql "$gateway_url" -v ON_ERROR_STOP=1 -Atc "select count(*) from pg_proc where pronamespace='public'::regnamespace and proname in ('create_voice_session_authorization','consume_voice_session_authorization','release_voice_session_authorization')" | grep -qx 3
+          psql "$gateway_url" -v ON_ERROR_STOP=1 -Atc "select count(*) from public.organization_members where organization_id='${CI_E2E_ORG_ID}' and user_id='${CI_E2E_USER_ID}'" | grep -qx 1
+          psql "$gateway_url" -v ON_ERROR_STOP=1 -Atc "select count(*) from public.agents where id='${CI_E2E_AGENT_ID}' and organization_id='${CI_E2E_ORG_ID}'" | grep -qx 1
           echo "GATEWAY_DATABASE_URL=$gateway_url" >> "$GITHUB_ENV"
           echo "CI_GATEWAY_DB=$gateway_db" >> "$GITHUB_ENV"
       - name: Build application
