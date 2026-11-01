@@ -262,6 +262,7 @@ const sql013 = readFileSync(
 );
 const sql015 = readFileSync(path.join(process.cwd(),"supabase/migrations/202610220015_operational_safety.sql"),"utf8").toLowerCase();
 const sql016 = readFileSync(path.join(process.cwd(),"supabase/migrations/202610220016_retry_audit_hardening.sql"),"utf8").toLowerCase();
+const sql018 = readFileSync(path.join(process.cwd(),"supabase/migrations/202610220018_transactional_session_admission.sql"),"utf8").toLowerCase();
 
 describe("review-only transactional safety migrations", () => {
   it("keeps all durable tables protected by RLS and without client policies", () => {
@@ -297,4 +298,19 @@ describe("review-only operational safety migration",()=>{
 describe("review-only retry hardening migration",()=>{
   it("retains immutable retry ledger and monotonic counters",()=>{expect(sql016).toContain("provider_retry_ledger");expect(sql016).toContain("provider_retry_counters");expect(sql016).toContain("primary key (organization_id,idempotency_key)");expect(sql016).toContain("last_attempt_number");expect(sql016).toContain("pg_advisory_xact_lock");});
   it("keeps safety tables private and maintenance scope explicit",()=>{expect(sql016).toContain("revoke all on voicepilot_safety.provider_retry_ledger,voicepilot_safety.provider_retry_counters from public,anon,authenticated");expect(sql016).toContain("trusted global maintenance");expect(sql016).toContain("review only");});
+});
+describe("review-only durable session admission migration",()=>{
+  it("uses locked, tenant-bound transactional routines",()=>{
+    expect(sql018).toContain("security definer");
+    expect(sql018).toContain("pg_advisory_xact_lock");
+    expect(sql018).toContain("request.jwt.claim.sub");
+    expect(sql018).toContain("voicepilot.organization_id");
+    expect(sql018).toContain("for update");
+  });
+  it("keeps admission routines unavailable to client roles",()=>{
+    expect(sql018).toContain("revoke all on function public.consume_voice_session_authorization");
+    expect(sql018).toContain("from public, anon, authenticated");
+    expect(sql018).toContain("grant execute on function public.create_voice_session_authorization");
+    expect(sql018).toContain("to service_role");
+  });
 });
