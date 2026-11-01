@@ -9,6 +9,7 @@ on:
       - feature/phase-10b2-secure-livekit-admission
       - feature/phase-10b3-signed-worker-admission
       - feature/phase-10b4-offline-admission-integration
+      - feature/phase-10c-integration-hardening
   pull_request:
     branches:
       - master
@@ -17,6 +18,7 @@ on:
       - feature/phase-10b-sandbox-authorization
       - feature/phase-10b2-secure-livekit-admission
       - feature/phase-10b3-signed-worker-admission
+      - feature/phase-10b4-offline-admission-integration
     paths:
       - ".github/workflows/pr20-offline-quality.yml"
       - "src/app/dashboard/agents/test/**"
@@ -26,6 +28,7 @@ on:
       - "workers/voice-agent/**"
       - "docs/phase-6-agent-test-studio-qa.md"
       - "docs/phase-10a-provider-sandbox-readiness.md"
+      - "docs/phase-10c-integration-audit.md"
   workflow_dispatch:
 
 permissions:
