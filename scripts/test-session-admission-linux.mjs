@@ -53,7 +53,7 @@ try {
   const raceResults = await Promise.allSettled([consumeRace, revokeRace]);
   if (raceResults.some((result) => result.status === "rejected")) throw new Error("revocation/consumption race returned an unexpected database error");
   const raceState = psql(db, `select (consumed_at is not null)::text || ':' || (revoked_at is not null)::text from public.voice_session_authorizations where assertion_id='${raceAssertion}'`);
-  if (!["t:t", "f:t"].includes(raceState)) throw new Error(`invalid revoke/consume race state: ${raceState}`);
+  if (!["true:true", "false:true"].includes(raceState)) throw new Error(`invalid revoke/consume race state: ${raceState}`);
   const repeatedRevoke = run(db, `begin; ${context} select public.revoke_voice_session_authorization('${raceAssertion}','${org}','${actor}'); commit;`);
   if (!/f|false/i.test(repeatedRevoke)) throw new Error(`repeated revocation was not idempotently rejected: ${repeatedRevoke}`);
   const mismatch = run(db, `begin; ${context.replace(org, uuid())} select public.consume_voice_session_authorization('${raceAssertion}','${org}','${actor}',clock_timestamp(),1,3600); rollback;`);
