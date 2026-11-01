@@ -157,6 +157,7 @@ jobs:
       VOICE_OUTBOUND_ENABLED: "false"
       VOICE_PROVIDER_ACTIVATION_ENABLED: "false"
       VOICE_CONNECTIVITY_TEST_ENABLED: "false"
+      VOICE_OFFLINE_ADMISSION_DIAGNOSTICS: "true"
       NODE_ENV: "test"
     steps:
       - name: Checkout
