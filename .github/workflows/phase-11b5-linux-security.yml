@@ -2,9 +2,9 @@ name: Phase 11B.5 Linux security acceptance
 
 on:
   push:
-    branches: [feature/phase-11b5-linux-security-acceptance, feature/phase-11b6-transaction-security-acceptance, feature/phase-11c-durable-usage-safety, feature/phase-12a-browser-voice-preparation, feature/phase-12a1-voice-flow-integration, feature/phase-12a2-browser-e2e-acceptance, feature/phase-12a3-postgres-voice-gateway]
+    branches: [feature/phase-11b5-linux-security-acceptance, feature/phase-11b6-transaction-security-acceptance, feature/phase-11c-durable-usage-safety, feature/phase-12a-browser-voice-preparation, feature/phase-12a1-voice-flow-integration, feature/phase-12a2-browser-e2e-acceptance, feature/phase-12a3-postgres-voice-gateway, feature/phase-12a4-postgres-adapter-acceptance]
   pull_request:
-    branches: [feature/phase-11b2-distributed-admission-verification, feature/phase-11b6-transaction-security-acceptance, feature/phase-11c-durable-usage-safety, feature/phase-12a-browser-voice-preparation, feature/phase-12a1-voice-flow-integration, feature/phase-12a2-browser-e2e-acceptance]
+    branches: [feature/phase-11b2-distributed-admission-verification, feature/phase-11b6-transaction-security-acceptance, feature/phase-11c-durable-usage-safety, feature/phase-12a-browser-voice-preparation, feature/phase-12a1-voice-flow-integration, feature/phase-12a2-browser-e2e-acceptance, feature/phase-12a3-postgres-voice-gateway]
 
 permissions:
   contents: read
@@ -24,6 +24,7 @@ jobs:
           --health-interval=5s --health-timeout=5s --health-retries=12
     steps:
       - uses: actions/checkout@v4
+      - run: npm ci --force
       - run: node scripts/test-session-admission-linux.mjs
         env:
           PGHOST: 127.0.0.1
