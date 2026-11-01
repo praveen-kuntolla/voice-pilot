@@ -173,15 +173,20 @@ jobs:
         shell: bash
         run: |
           npx supabase status -o env > "$RUNNER_TEMP/supabase.env"
+          api_url=$(grep '^API_URL=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)
+          anon_key=$(grep '^ANON_KEY=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)
+          service_role_key=$(grep '^SERVICE_ROLE_KEY=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)
+          db_url=$(grep '^DB_URL=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)
+          for value in "$api_url" "$anon_key" "$service_role_key" "$db_url"; do test -n "$value"; done
           for key in API_URL ANON_KEY SERVICE_ROLE_KEY DB_URL; do
             value=$(grep "^${key}=" "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)
             test -n "$value"
             echo "$key=$value" >> "$GITHUB_ENV"
           done
-          echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
-          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
-          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
-          echo "GATEWAY_DATABASE_URL=$DB_URL" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_URL=$api_url" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$anon_key" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$service_role_key" >> "$GITHUB_ENV"
+          echo "GATEWAY_DATABASE_URL=$db_url" >> "$GITHUB_ENV"
           echo "VOICE_OFFLINE_ADMISSION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
           echo "CI_E2E_FIXTURE_STATE=$RUNNER_TEMP/voicepilot-fixtures.json" >> "$GITHUB_ENV"
       - name: Provision synthetic disposable fixtures

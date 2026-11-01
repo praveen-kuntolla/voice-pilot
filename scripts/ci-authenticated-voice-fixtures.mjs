@@ -33,7 +33,15 @@ async function setup() {
   console.log("Disposable synthetic fixtures created in the protected CI environment.");
 }
 async function cleanup() {
-  const state = loadState(); const userId = state.userId; const otherId = state.otherUserId;
+  let state;
+  try { state = loadState(); } catch {
+    const users = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (users.error || users.data.users.some((user) => user.email?.startsWith("voicepilot-ci-"))) throw new Error("Fixture state is missing while synthetic users remain");
+    const { data: orgs, error } = await supabase.from("organizations").select("id,name").ilike("name", "CI Disposable%");
+    if (error || (orgs ?? []).length) throw new Error("Fixture state is missing while disposable organizations remain");
+    console.log("No synthetic fixtures remain; cleanup is complete."); return;
+  }
+  const userId = state.userId; const otherId = state.otherUserId;
   for (const [table, column, value] of [["campaigns", "id", state.campaignId], ["contacts", "id", state.contactId], ["agents", "id", state.agentId], ["organization_members", "organization_id", state.orgId], ["organizations", "id", state.orgId], ["profiles", "id", userId], ["profiles", "id", otherId]]) if (value) await supabase.from(table).delete().eq(column, value);
   for (const id of [userId, otherId].filter(Boolean)) await admin(`/auth/v1/admin/users/${id}`, { method: "DELETE" });
   unlinkSync(statePath);
