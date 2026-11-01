@@ -142,3 +142,92 @@ jobs:
         run: python -m pip install -e ".[test]"
       - name: Local Python tests (never launch worker)
         run: python -m pytest -q
+
+  authenticated-voice-postgres-e2e:
+    name: authenticated-voice-postgres-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      VOICE_SESSION_POSTGRES_DISPOSABLE: "true"
+      VOICE_OFFLINE_ADMISSION_TEST_ENABLED: "true"
+      VOICE_REALTIME_ENABLED: "false"
+      VOICE_OUTBOUND_ENABLED: "false"
+      VOICE_PROVIDER_ACTIVATION_ENABLED: "false"
+      VOICE_CONNECTIVITY_TEST_ENABLED: "false"
+      NODE_ENV: "test"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Start disposable Supabase
+        run: npx supabase start
+      - name: Export loopback Supabase configuration
+        shell: bash
+        run: |
+          npx supabase status -o env > "$RUNNER_TEMP/supabase.env"
+          for key in API_URL ANON_KEY SERVICE_ROLE_KEY DB_URL; do
+            value=$(grep "^${key}=" "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)
+            test -n "$value"
+            echo "$key=$value" >> "$GITHUB_ENV"
+          done
+          echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> "$GITHUB_ENV"
+          echo "GATEWAY_DATABASE_URL=$DB_URL" >> "$GITHUB_ENV"
+          echo "VOICE_OFFLINE_ADMISSION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - name: Provision synthetic disposable fixtures
+        run: node scripts/ci-authenticated-voice-fixtures.mjs setup
+      - name: Clone disposable gateway database
+        shell: bash
+        run: |
+          gateway_db="vp_gateway_ci_${GITHUB_RUN_ID}"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -c "create database ${gateway_db}"
+          gateway_url="${DB_URL%/postgres}/${gateway_db}"
+          echo "GATEWAY_DATABASE_URL=$gateway_url" >> "$GITHUB_ENV"
+          echo "CI_GATEWAY_DB=$gateway_db" >> "$GITHUB_ENV"
+      - name: Build application
+        run: npm run build
+      - name: Start isolated Next.js server
+        shell: bash
+        run: |
+          PORT=3100 npm start > "$RUNNER_TEMP/voicepilot-next.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/voicepilot-next.pid"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3100/api/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/voicepilot-next.log"
+          exit 1
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run mandatory authenticated lifecycle
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3100
+          PLAYWRIGHT_REUSE_EXISTING_SERVER: "true"
+        run: npx playwright test tests/e2e/phase-12b-authenticated-voice-session.spec.ts --workers=1
+      - name: Stop isolated Next.js server
+        if: always()
+        shell: bash
+        run: |
+          if test -f "$RUNNER_TEMP/voicepilot-next.pid"; then kill "$(cat "$RUNNER_TEMP/voicepilot-next.pid")" 2>/dev/null || true; fi
+      - name: Cleanup disposable fixtures
+        if: always()
+        run: node scripts/ci-authenticated-voice-fixtures.mjs cleanup
+      - name: Verify no fixture metadata remains
+        if: always()
+        shell: bash
+        run: test ! -e .local/voicepilot-local-loopback-fixtures.json
+      - name: Stop disposable Supabase
+        if: always()
+        shell: bash
+        run: |
+          if test -n "${CI_GATEWAY_DB:-}"; then dropdb "$CI_GATEWAY_DB" --if-exists || true; fi
+          npx supabase stop --no-backup

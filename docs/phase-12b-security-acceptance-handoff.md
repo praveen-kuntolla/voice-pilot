@@ -116,3 +116,21 @@ The workflow trigger was extended for the Phase 12B stacked base and this
 acceptance branch. It does not silently claim authenticated acceptance: that
 job still requires approved disposable Auth/PostgreSQL fixtures and must be
 added or run only once that environment can be verified.
+
+## PR #48 acceptance implementation
+
+PR #48 now contains a distinct `authenticated-voice-postgres-e2e` CI job. It
+starts Supabase locally on Ubuntu, creates a randomized gateway database from
+the local disposable template after synthetic fixtures are created, starts the
+real Next.js application, and runs a mandatory Playwright test. Cleanup stops
+the server, drops the gateway database, removes synthetic Auth users and stops
+Supabase. Missing fixture/configuration causes failure rather than a skipped
+pass.
+
+The browser test verifies login, explicit-consent rejection, authenticated
+offline admission, simulation-only/no-recording response, cancellation,
+idempotent repeated cancellation, and persisted PostgreSQL consumed/released
+state. It does not request microphone access or contact any provider.
+
+The test also exposed and corrected a contract defect: the start response now
+returns the `assertionId` required by the cancellation endpoint.
