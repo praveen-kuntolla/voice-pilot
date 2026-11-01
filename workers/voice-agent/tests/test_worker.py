@@ -7,7 +7,7 @@ import pytest
 from voice_agent.config import load_config, validate_connectivity_config
 from voice_agent.runtime import RuntimeConfig
 from voice_agent.service_client import runtime_config_from_response, signed_config_request, validate_config_endpoint
-from voice_agent.worker import build_worker_plan, create_livekit_server, load_runtime_config, parse_room_name, run_connectivity_session
+from voice_agent.worker import AgentSessionPlan, build_agent_session_plan, build_worker_plan, create_livekit_server, load_runtime_config, parse_room_name, run_connectivity_session
 
 ORG = "11111111-1111-4111-8111-111111111111"
 AGENT = "22222222-2222-4222-8222-222222222222"
@@ -50,6 +50,16 @@ def test_configuration_loader_must_match_room_tenant():
 
     async def wrong_loader(org, agent, room): return RuntimeConfig("wrong-org", agent, "en-US", "bad", session_id=SESSION)
     with pytest.raises(PermissionError): asyncio.run(load_runtime_config(wrong_loader, ROOM))
+
+def test_agent_session_plan_is_tenant_bound_without_activating_providers():
+    async def loader(org, agent, room):
+        return RuntimeConfig(org, agent, "en-US", "Safe instructions", session_id=SESSION)
+
+    plan = asyncio.run(build_agent_session_plan(loader, ROOM))
+    assert isinstance(plan, AgentSessionPlan)
+    assert plan.room.organization_id == ORG
+    assert plan.room.agent_id == AGENT
+    assert plan.instructions == "Safe instructions"
 
 def test_service_response_is_minimal_and_tenant_bound():
     result = runtime_config_from_response({"agent": {"id": AGENT, "organization_id": ORG, "language": "en", "instructions": "Be safe", "voice_id": "mock"}}, ORG, AGENT)

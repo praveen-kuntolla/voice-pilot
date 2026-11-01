@@ -23,6 +23,26 @@ class RoomConfig:
     agent_id: str
     session_id: str
 
+
+@dataclass(frozen=True)
+class AgentSessionPlan:
+    """Tenant-bound plan passed to the official AgentSession seam.
+
+    The plan carries only validated runtime data. It never instantiates STT,
+    LLM, TTS, or audio I/O; provider activation remains an explicit future
+    deployment decision behind the existing real-mode gates.
+    """
+
+    room: RoomConfig
+    runtime: RuntimeConfig
+    instructions: str
+
+
+async def build_agent_session_plan(loader: ConfigLoader, room_name: str) -> AgentSessionPlan:
+    room = parse_room_name(room_name)
+    runtime = await load_runtime_config(loader, room_name)
+    return AgentSessionPlan(room=room, runtime=runtime, instructions=runtime.instructions)
+
 def parse_room_name(name: str) -> RoomConfig:
     parts = name.split(":")
     uuid = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
