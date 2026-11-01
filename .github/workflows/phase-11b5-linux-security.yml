@@ -2,9 +2,9 @@ name: Phase 11B.5 Linux security acceptance
 
 on:
   push:
-    branches: [feature/phase-11b5-linux-security-acceptance, feature/phase-11b6-transaction-security-acceptance, feature/phase-11c-durable-usage-safety, feature/phase-12a-browser-voice-preparation, feature/phase-12a1-voice-flow-integration]
+    branches: [feature/phase-11b5-linux-security-acceptance, feature/phase-11b6-transaction-security-acceptance, feature/phase-11c-durable-usage-safety, feature/phase-12a-browser-voice-preparation, feature/phase-12a1-voice-flow-integration, feature/phase-12a2-browser-e2e-acceptance, feature/phase-12a3-postgres-voice-gateway]
   pull_request:
-    branches: [feature/phase-11b2-distributed-admission-verification, feature/phase-11b6-transaction-security-acceptance, feature/phase-11c-durable-usage-safety, feature/phase-12a-browser-voice-preparation]
+    branches: [feature/phase-11b2-distributed-admission-verification, feature/phase-11b6-transaction-security-acceptance, feature/phase-11c-durable-usage-safety, feature/phase-12a-browser-voice-preparation, feature/phase-12a1-voice-flow-integration, feature/phase-12a2-browser-e2e-acceptance]
 
 permissions:
   contents: read
