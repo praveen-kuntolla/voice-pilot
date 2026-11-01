@@ -15,6 +15,7 @@ on:
       - feature/phase-10c-integration-hardening
       - feature/phase-12b-runtime-readiness
       - feature/phase-12b-authenticated-acceptance
+      - feature/browser-voice-livekit-integration
       - feature/phase-11b-durable-session-authorization
       - feature/phase-11b1-transactional-admission
       - feature/phase-10c-integration-hardening
@@ -30,10 +31,15 @@ on:
       - feature/phase-11b1-transactional-admission
       - feature/phase-11b2-distributed-admission-verification
       - feature/phase-12b-runtime-readiness
+      - feature/phase-12b-authenticated-acceptance
     paths:
       - ".github/workflows/pr20-offline-quality.yml"
       - "src/app/dashboard/agents/test/**"
       - "src/lib/voice-runtime.ts"
+      - "src/lib/browser-voice-session.ts"
+      - "src/app/api/livekit/**"
+      - "src/components/browser-voice-session-preparation.tsx"
+      - "src/components/voice-sandbox-preparation.tsx"
       - "src/lib/voice-sandbox.ts"
       - "tests/**"
       - "workers/voice-agent/**"
@@ -41,6 +47,7 @@ on:
       - "docs/phase-10a-provider-sandbox-readiness.md"
       - "docs/phase-10c-integration-audit.md"
       - "docs/phase-11b-durable-session-authorization.md"
+      - "docs/phase-12b-security-acceptance-handoff.md"
       - "supabase/migrations/202610220018_transactional_session_admission.sql"
       - "scripts/test-session-admission.mjs"
       - "src/lib/durable-session-authorization.ts"

@@ -195,3 +195,21 @@ credential storage and rotation, network egress, retention/deletion policy,
 provider quotas, emergency disconnect and rollback owners, and the exact
 synthetic identity. Independent PostgreSQL and voice-platform reviewers must
 record approval. Until then the decision is **NO-GO**.
+
+## Browser voice integration preparation
+
+The stacked browser-voice preparation branch adds a server-only browser-session
+boundary and an explicit activation envelope. The browser control is visibly
+disabled, does not request microphone permission, and does not contact LiveKit
+while the envelope is disabled. Future token issuance requires all of
+`VOICE_BROWSER_VOICE_SESSION_ENABLED`, `VOICE_PROVIDER_ACTIVATION_ENABLED` and
+`VOICE_REALTIME_ENABLED` to be explicitly true, while outbound calling and
+recording remain false. Authentication, organization membership and agent
+ownership are checked before any future issuance path.
+
+The disconnect controller is an offline orchestration contract only. It orders
+worker cancellation, participant removal, room closure, admission revocation,
+usage reconciliation and reservation release, and is idempotent. Provider-side
+termination, microphone behavior, audio retention, spend enforcement and live
+failure handling remain unverified and require independent human approval in a
+separate disposable connectivity environment.

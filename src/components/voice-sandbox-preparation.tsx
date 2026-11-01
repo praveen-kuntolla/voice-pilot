@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BrowserVoiceSessionPreparation } from "@/components/browser-voice-session-preparation";
 
 export function VoiceSandboxPreparation() {
   return <section className="card" aria-labelledby="voice-sandbox-preparation" style={{ marginTop: 18 }}>
@@ -18,5 +19,6 @@ export function VoiceSandboxPreparation() {
       <li>Recording: disabled by default</li>
     </ul>
     <p className="muted" style={{ marginBottom: 0 }}>Future admission will require tenant authorization, signed gateway approval, explicit microphone consent, bounded duration, emergency-stop clearance and durable usage capacity.</p>
+    <BrowserVoiceSessionPreparation />
   </section>;
 }
