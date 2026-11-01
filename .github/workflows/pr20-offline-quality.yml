@@ -4,16 +4,20 @@ on:
   push:
     branches:
       - feature/phase-6-agent-test-studio
+      - feature/phase-10a-provider-sandbox-readiness
   pull_request:
     branches:
       - master
+      - feature/phase-9-call-lifecycle-contract
     paths:
       - ".github/workflows/pr20-offline-quality.yml"
       - "src/app/dashboard/agents/test/**"
       - "src/lib/voice-runtime.ts"
+      - "src/lib/voice-sandbox.ts"
       - "tests/**"
       - "workers/voice-agent/**"
       - "docs/phase-6-agent-test-studio-qa.md"
+      - "docs/phase-10a-provider-sandbox-readiness.md"
   workflow_dispatch:
 
 permissions:
