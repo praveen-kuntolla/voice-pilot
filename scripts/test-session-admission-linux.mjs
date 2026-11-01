@@ -14,7 +14,13 @@ const spawnPsql = (database, sql) => new Promise((resolvePromise, reject) => {
   child.stdout.on("data", (chunk) => { output += chunk; }); child.stderr.on("data", (chunk) => { error += chunk; });
   child.on("error", reject); child.on("close", (code, signal) => code === 0 ? resolvePromise({ output: output.trim(), code, signal }) : reject(new Error(error || `psql exited ${code}`)));
 });
-const killOwned = (child) => { if (child.exitCode === null) child.kill("SIGTERM"); };
+const killOwned = async (child) => {
+  if (child.exitCode !== null) return;
+  child.kill("SIGTERM");
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+  if (child.exitCode === null) child.kill("SIGKILL");
+};
+const waitForExit = (child) => child.exitCode !== null ? Promise.resolve() : new Promise((resolvePromise) => child.once("close", resolvePromise));
 const uuid = () => randomUUID();
 let created = false;
 try {
@@ -27,14 +33,14 @@ try {
   run(db, `begin; ${context} select public.create_voice_session_authorization('${auth}','${org}','${agent}','${actor}','${session}','${assertion}',clock_timestamp(),clock_timestamp()+interval '5 minutes'); commit;`);
   const beforeCommit = spawn("psql", ["-X", "-v", "ON_ERROR_STOP=1", "-h", base.host, "-p", base.port, "-U", base.user, "-d", db, "-At", "-c", `begin; ${context} select public.consume_voice_session_authorization('${assertion}','${org}','${actor}',clock_timestamp(),1,3600); select pg_sleep(30); commit;`], { env, stdio: ["ignore", "pipe", "pipe"] });
   await new Promise((resolvePromise, reject) => { beforeCommit.once("error", reject); setTimeout(resolvePromise, 400); });
-  killOwned(beforeCommit);
-  await new Promise((resolvePromise) => beforeCommit.once("close", resolvePromise));
+  await killOwned(beforeCommit);
+  await waitForExit(beforeCommit);
   if (run(db, `select count(*) from public.voice_session_authorizations where assertion_id='${assertion}' and consumed_at is not null;`) !== "0") throw new Error("pre-commit crash leaked consumption");
   const recovered = run(db, `begin; ${context} select public.consume_voice_session_authorization('${assertion}','${org}','${actor}',clock_timestamp(),1,3600); commit;`);
   if (!/"reused"\s*:\s*false/.test(recovered)) throw new Error(`post-crash retry did not consume once: ${recovered}`);
   run(db, `begin; ${context} select public.create_voice_session_authorization('${committedAuth}','${org}','${agent}','${actor}','${committedSession}','${committedAssertion}',clock_timestamp(),clock_timestamp()+interval '5 minutes'); select public.consume_voice_session_authorization('${committedAssertion}','${org}','${actor}',clock_timestamp(),1,3600); commit;`);
   const lostResult = spawn("psql", ["-X", "-v", "ON_ERROR_STOP=1", "-h", base.host, "-p", base.port, "-U", base.user, "-d", db, "-At", "-c", `select public.consume_voice_session_authorization('${committedAssertion}','${org}','${actor}',clock_timestamp(),1,3600); select pg_sleep(30);`], { env, stdio: ["ignore", "pipe", "pipe"] });
-  await new Promise((resolvePromise) => setTimeout(resolvePromise, 400)); killOwned(lostResult); await new Promise((resolvePromise) => lostResult.once("close", resolvePromise));
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, 400)); await killOwned(lostResult); await waitForExit(lostResult);
   if (!run(db, `select consumed_at is not null from public.voice_session_authorizations where assertion_id='${committedAssertion}';`).includes("t")) throw new Error("committed state was not durable after lost result");
   let unavailable = false; try { execFileSync("psql", ["-X", "-h", base.host, "-p", "1", "-U", base.user, "-d", db, "-At", "-c", "select 1"], { env, timeout: 2_000, stdio: "ignore" }); } catch { unavailable = true; } if (!unavailable) throw new Error("database-unavailable case did not fail closed");
   console.log("LINUX_SESSION_ADMISSION_OK pre-commit crash rollback, post-commit lost-result recovery, replay and database-unavailable checks passed");
