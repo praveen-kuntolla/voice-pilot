@@ -12,7 +12,7 @@ describe.skipIf(!configured)("real disposable PostgreSQL voice-session adapter",
   const actorId = process.env.GATEWAY_ACTOR_ID!;
   const organizationId = process.env.GATEWAY_ORG_ID!;
   const agentId = process.env.GATEWAY_AGENT_ID!;
-  const now = 1_700_000_000_000;
+  const now = Date.now();
   afterAll(async () => { await pool.end(); });
 
   it("creates, consumes, persists, releases and rejects a tenant-mismatched session", async () => {
