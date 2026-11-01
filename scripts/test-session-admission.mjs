@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -7,6 +7,12 @@ const docker = "C:\\Users\\PC\\AppData\\Local\\Programs\\DockerDesktop\\resource
 const container = "voicepilot-local-loopback-db-1";
 const run = (args, options = {}) => execFileSync(docker, args, { encoding: "utf8", timeout: 60_000, maxBuffer: 32 * 1024 * 1024, ...options }).trim();
 const psql = (db, sql) => run(["exec", "-i", container, "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", db], { input: sql });
+const parallelPsql = (db, sql) => new Promise((resolvePromise, reject) => {
+  const child = spawn(docker, ["exec", container, "psql", "-XAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", db, "-c", sql], { windowsHide: true });
+  let output = ""; let error = "";
+  child.stdout.on("data", (chunk) => { output += chunk; }); child.stderr.on("data", (chunk) => { error += chunk; });
+  child.on("error", reject); child.on("close", (code) => code === 0 ? resolvePromise(output.trim()) : reject(new Error(error || `psql exited ${code}`)));
+});
 const db = `vp_session_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
 const actor = randomUUID(), org = randomUUID(), other = randomUUID(), agent = randomUUID(), auth = randomUUID(), session = randomUUID(), assertion = randomUUID();
 let created = false;
@@ -20,6 +26,9 @@ try {
   psql(db, setup);
   const ok = psql(db, `begin; set local role service_role; select set_config('request.jwt.claim.sub','${actor}',true),set_config('voicepilot.organization_id','${org}',true); select public.create_voice_session_authorization('${auth}','${org}','${agent}','${actor}','${session}','${assertion}',clock_timestamp(),clock_timestamp()+interval '5 minutes'); commit;`);
   if (!ok.includes("voice_sandbox")) throw new Error("authorization creation failed");
+  const concurrentSql = `begin; set local role service_role; select set_config('request.jwt.claim.sub','${actor}',true),set_config('voicepilot.organization_id','${org}',true); select public.consume_voice_session_authorization('${assertion}','${org}','${actor}',clock_timestamp(),1,3600); commit;`;
+  const concurrent = await Promise.all([parallelPsql(db, concurrentSql), parallelPsql(db, concurrentSql)]);
+  if (concurrent.filter((value) => value.includes('"reused": false') || value.includes('"reused":false')).length !== 1) throw new Error("concurrent admission did not produce one authoritative consumption");
   const consumed = psql(db, `begin; set local role service_role; select set_config('request.jwt.claim.sub','${actor}',true),set_config('voicepilot.organization_id','${org}',true); select public.consume_voice_session_authorization('${assertion}','${org}','${actor}',clock_timestamp(),1,3600); commit;`);
   if (!consumed.includes('"ok": true') && !consumed.includes('"ok":true')) throw new Error("consumption failed");
   const replay = psql(db, `begin; set local role service_role; select set_config('request.jwt.claim.sub','${actor}',true),set_config('voicepilot.organization_id','${org}',true); select public.consume_voice_session_authorization('${assertion}','${org}','${actor}',clock_timestamp(),1,3600); commit;`);
