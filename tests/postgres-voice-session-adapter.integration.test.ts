@@ -20,8 +20,7 @@ describe.skipIf(!configured)("real disposable PostgreSQL voice-session adapter",
     const assertionId = crypto.randomUUID();
     const created = await createPostgresVoiceAuthorization({ organizationId, agentId, actorId, sessionId, assertionId, issuedAt: now, expiresAt: now + 300_000 }, { executor, disposableEnvironment: true });
     expect(created.ok).toBe(true);
-    const authorizationId = created.ok && created.authorization && typeof created.authorization === "object" && "authorization_id" in created.authorization ? String(created.authorization.authorization_id) : "";
-    const authorization: SessionAuthorization = { authorizationId, organizationId, agentId, actorId, sessionId, assertionId, capability: "voice_sandbox", issuedAt: now, expiresAt: now + 300_000, maxDurationSeconds: 60 };
+    const authorization: SessionAuthorization = created.ok ? created.authorization : { authorizationId: "", organizationId, agentId, actorId, sessionId, assertionId, capability: "voice_sandbox", issuedAt: now, expiresAt: now + 300_000, maxDurationSeconds: 60 };
     const claims = { version: 1 as const, keyId: "ci-offline", assertionId, organizationId, agentId, actorId, sessionId, issuedAt: now, expiresAt: now + 300_000, capability: "voice_sandbox" as const, maxDurationSeconds: 60, usageLimit: { inputCharacters: 100, outputCharacters: 100 }, providerActivationEnabled: false as const };
     const context = { organizationId, agentId, actorId, sessionId, assertionId };
     const request = { organizationId, agentId, actorId, sessionId, microphoneConsent: true, providerActivationEnabled: false as const, maxDurationSeconds: 60, noRecording: true as const };

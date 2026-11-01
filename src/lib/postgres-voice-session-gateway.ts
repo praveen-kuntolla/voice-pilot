@@ -62,8 +62,8 @@ export async function createPostgresVoiceAuthorization(input: { organizationId: 
   try {
     return await deps.executor.transaction(async (query) => {
       await query("select set_config('request.jwt.claim.sub',$1::text,true), set_config('voicepilot.organization_id',$2::text,true)", [input.actorId, input.organizationId]);
-      const row = await one<{ result: unknown }>(query, "select public.create_voice_session_authorization($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::uuid,$6::uuid,$7::timestamptz,$8::timestamptz) as result", [authorizationId, input.organizationId, input.agentId, input.actorId, input.sessionId, input.assertionId, new Date(input.issuedAt).toISOString(), new Date(input.expiresAt).toISOString()]);
-      return { ok: true as const, authorization: row?.result };
+      await query("select public.create_voice_session_authorization($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::uuid,$6::uuid,$7::timestamptz,$8::timestamptz)", [authorizationId, input.organizationId, input.agentId, input.actorId, input.sessionId, input.assertionId, new Date(input.issuedAt).toISOString(), new Date(input.expiresAt).toISOString()]);
+      return { ok: true as const, authorization: { authorizationId, ...input, capability: "voice_sandbox" as const, maxDurationSeconds: 60 } };
     });
   } catch { return { ok: false as const, error: "unavailable" as const }; }
 }
