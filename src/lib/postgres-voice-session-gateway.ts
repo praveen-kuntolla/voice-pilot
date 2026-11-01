@@ -12,7 +12,7 @@ type GatewayError = "invalid" | "unauthorized" | "expired" | "replayed" | "revok
 type GatewayDeps = { executor: SafetyTransactionExecutor; resolveKey: AdmissionKeyResolver; now: () => number; policy: (context: SessionContext) => Promise<SessionPolicy> | SessionPolicy; disposableEnvironment: boolean; providerActivationEnabled?: boolean };
 
 export type PostgresVoiceSessionInput = { request: unknown; admission: unknown; authorization: unknown; context: SessionContext };
-export type PostgresVoiceSessionResult = { ok: true; session: { sessionId: string; organizationId: string; agentId: string; actorId: string; simulationOnly: true; providerActivationEnabled: false; noRecording: true; reused: boolean } } | { ok: false; error: GatewayError };
+export type PostgresVoiceSessionResult = { ok: true; session: { sessionId: string; assertionId: string; organizationId: string; agentId: string; actorId: string; simulationOnly: true; providerActivationEnabled: false; noRecording: true; reused: boolean } } | { ok: false; error: GatewayError };
 
 const one = async <T extends GatewayRow>(query: SafetyQuery, sql: string, values: readonly unknown[]) => (await query<T>(sql, values)).rows[0];
 
@@ -40,7 +40,7 @@ export async function startPostgresVoiceSession(input: PostgresVoiceSessionInput
       const row = await one<{ result: unknown }>(query, "select public.consume_voice_session_authorization($1::uuid,$2::uuid,$3::uuid,$4::timestamptz,$5::integer,$6::integer) as result", [a.assertionId, a.organizationId, a.actorId, new Date(deps.now()).toISOString(), 1, a.maxDurationSeconds]);
       const result = row?.result;
       if (!result || typeof result !== "object" || (result as { ok?: unknown }).ok !== true) return { ok: false, error: resultError(result) };
-      return { ok: true, session: { sessionId: a.sessionId, organizationId: a.organizationId, agentId: a.agentId, actorId: a.actorId, simulationOnly: true, providerActivationEnabled: false, noRecording: true, reused: (result as { reused?: boolean }).reused === true } };
+      return { ok: true, session: { sessionId: a.sessionId, assertionId: a.assertionId, organizationId: a.organizationId, agentId: a.agentId, actorId: a.actorId, simulationOnly: true, providerActivationEnabled: false, noRecording: true, reused: (result as { reused?: boolean }).reused === true } };
     });
   } catch { return { ok: false, error: "unavailable" }; }
 }

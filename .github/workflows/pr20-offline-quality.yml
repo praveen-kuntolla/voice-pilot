@@ -13,6 +13,8 @@ on:
       - feature/phase-11b1-transactional-admission
       - feature/phase-11b2-distributed-admission-verification
       - feature/phase-10c-integration-hardening
+      - feature/phase-12b-runtime-readiness
+      - feature/phase-12b-authenticated-acceptance
       - feature/phase-11b-durable-session-authorization
       - feature/phase-11b1-transactional-admission
       - feature/phase-10c-integration-hardening
@@ -27,6 +29,7 @@ on:
       - feature/phase-10b4-offline-admission-integration
       - feature/phase-11b1-transactional-admission
       - feature/phase-11b2-distributed-admission-verification
+      - feature/phase-12b-runtime-readiness
     paths:
       - ".github/workflows/pr20-offline-quality.yml"
       - "src/app/dashboard/agents/test/**"
@@ -42,10 +45,15 @@ on:
       - "scripts/test-session-admission.mjs"
       - "src/lib/durable-session-authorization.ts"
       - "supabase/migrations/202610220017_durable_session_authorization.sql"
+      - "docs/phase-12b-security-acceptance-handoff.md"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: voicepilot-offline-quality-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   quality:
@@ -61,6 +69,7 @@ jobs:
       VOICE_REALTIME_ENABLED: "false"
       VOICE_OUTBOUND_ENABLED: "false"
       VOICE_CONNECTIVITY_TEST_ENABLED: "false"
+      VOICE_OFFLINE_ADMISSION_DIAGNOSTICS: "true"
       VOICE_PROVIDER_ACTIVATION_ENABLED: "false"
     steps:
       - name: Checkout
@@ -138,3 +147,121 @@ jobs:
         run: python -m pip install -e ".[test]"
       - name: Local Python tests (never launch worker)
         run: python -m pytest -q
+
+  authenticated-voice-postgres-e2e:
+    name: authenticated-voice-postgres-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      VOICE_SESSION_POSTGRES_DISPOSABLE: "true"
+      VOICE_OFFLINE_ADMISSION_TEST_ENABLED: "true"
+      VOICE_OFFLINE_ADMISSION_CI: "true"
+      VOICE_REALTIME_ENABLED: "false"
+      VOICE_OUTBOUND_ENABLED: "false"
+      VOICE_PROVIDER_ACTIVATION_ENABLED: "false"
+      VOICE_CONNECTIVITY_TEST_ENABLED: "false"
+      VOICE_OFFLINE_ADMISSION_DIAGNOSTICS: "true"
+      NODE_ENV: "test"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Start disposable Supabase
+        run: npx supabase start
+      - name: Export loopback Supabase configuration
+        shell: bash
+        run: |
+          npx supabase status -o env > "$RUNNER_TEMP/supabase.env"
+          clean_value() { value="$1"; value="${value#\"}"; value="${value%\"}"; printf '%s' "$value"; }
+          api_url=$(clean_value "$(grep '^API_URL=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)")
+          anon_key=$(clean_value "$(grep '^ANON_KEY=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)")
+          service_role_key=$(clean_value "$(grep '^SERVICE_ROLE_KEY=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)")
+          db_url=$(clean_value "$(grep '^DB_URL=' "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)")
+          for value in "$api_url" "$anon_key" "$service_role_key" "$db_url"; do test -n "$value"; done
+          for key in API_URL ANON_KEY SERVICE_ROLE_KEY DB_URL; do
+            value=$(clean_value "$(grep "^${key}=" "$RUNNER_TEMP/supabase.env" | head -n 1 | cut -d= -f2-)")
+            test -n "$value"
+            echo "$key=$value" >> "$GITHUB_ENV"
+          done
+          echo "NEXT_PUBLIC_SUPABASE_URL=$api_url" >> "$GITHUB_ENV"
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$anon_key" >> "$GITHUB_ENV"
+          echo "SUPABASE_SERVICE_ROLE_KEY=$service_role_key" >> "$GITHUB_ENV"
+          echo "GATEWAY_DATABASE_URL=$db_url" >> "$GITHUB_ENV"
+          admission_secret=$(openssl rand -hex 32)
+          echo "::add-mask::$admission_secret"
+          echo "VOICE_OFFLINE_ADMISSION_SECRET=$admission_secret" >> "$GITHUB_ENV"
+          echo "CI_E2E_FIXTURE_STATE=$RUNNER_TEMP/voicepilot-fixtures.json" >> "$GITHUB_ENV"
+      - name: Provision synthetic disposable fixtures
+        id: provision
+        run: node scripts/ci-authenticated-voice-fixtures.mjs setup
+      - name: Clone disposable gateway database
+        shell: bash
+        run: |
+          gateway_db="vp_gateway_ci_${GITHUB_RUN_ID}"
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -c "create database ${gateway_db}"
+          gateway_url="${DB_URL%/postgres}/${gateway_db}"
+          dump_file="$RUNNER_TEMP/voicepilot-gateway.sql"
+          pg_dump --no-owner --no-privileges --no-comments --exclude-table-data='vault.secrets' "$DB_URL" > "$dump_file"
+          match_count=$(grep -Ec '^[[:space:]]*SET[[:space:]]+log_min_messages([[:space:]]|=)' "$dump_file" || true)
+          test "$match_count" -gt 0
+          sed -i -E '/^[[:space:]]*SET[[:space:]]+log_min_messages([[:space:]]|=)/d' "$dump_file"
+          if grep -Eq '^[[:space:]]*SET[[:space:]]+log_min_messages([[:space:]]|=)' "$dump_file"; then echo "Unsupported log_min_messages statement remains in dump"; exit 1; fi
+          psql "$gateway_url" -v ON_ERROR_STOP=1 < "$dump_file"
+          psql "$gateway_url" -v ON_ERROR_STOP=1 -Atc "select count(*) from pg_proc where pronamespace='public'::regnamespace and proname in ('create_voice_session_authorization','consume_voice_session_authorization','release_voice_session_authorization')" | grep -qx 3
+          psql "$gateway_url" -v ON_ERROR_STOP=1 -Atc "select count(*) from public.organization_members where organization_id='${CI_E2E_ORG_ID}' and user_id='${CI_E2E_USER_ID}'" | grep -qx 1
+          psql "$gateway_url" -v ON_ERROR_STOP=1 -Atc "select count(*) from public.agents where id='${CI_E2E_AGENT_ID}' and organization_id='${CI_E2E_ORG_ID}'" | grep -qx 1
+          echo "GATEWAY_DATABASE_URL=$gateway_url" >> "$GITHUB_ENV"
+          echo "CI_GATEWAY_DB=$gateway_db" >> "$GITHUB_ENV"
+      - name: Build application
+        run: npm run build
+      - name: Start isolated Next.js server
+        shell: bash
+        run: |
+          NODE_ENV=development npm run dev -- -H 127.0.0.1 -p 3100 > "$RUNNER_TEMP/voicepilot-next.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/voicepilot-next.pid"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3100/api/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/voicepilot-next.log"
+          exit 1
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run mandatory authenticated lifecycle
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3100
+          PLAYWRIGHT_REUSE_EXISTING_SERVER: "true"
+        run: npx playwright test tests/e2e/phase-12b-authenticated-voice-session.spec.ts --workers=1
+      - name: Stop isolated Next.js server
+        if: always()
+        shell: bash
+        run: |
+          if test -f "$RUNNER_TEMP/voicepilot-next.pid"; then kill "$(cat "$RUNNER_TEMP/voicepilot-next.pid")" 2>/dev/null || true; fi
+      - name: Cleanup disposable fixtures
+        if: always() && steps.provision.outcome != 'skipped'
+        run: node scripts/ci-authenticated-voice-fixtures.mjs cleanup
+      - name: Verify no fixture metadata remains
+        if: always()
+        shell: bash
+        run: test ! -e .local/voicepilot-local-loopback-fixtures.json
+      - name: Stop disposable Supabase
+        if: always()
+        shell: bash
+        run: |
+          if test -n "${CI_GATEWAY_DB:-}"; then
+            case "$CI_GATEWAY_DB" in
+              vp_gateway_ci_[0-9]*) ;;
+              *) echo "Unexpected disposable database name"; exit 1 ;;
+            esac
+            psql "$DB_URL" -v ON_ERROR_STOP=1 -c "drop database if exists \"$CI_GATEWAY_DB\""
+            if psql "$DB_URL" -Atc "select 1 from pg_database where datname='${CI_GATEWAY_DB}'" | grep -q 1; then echo "Gateway database teardown verification failed"; exit 1; fi
+          fi
+          npx supabase stop --no-backup
