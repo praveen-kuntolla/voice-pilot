@@ -26,6 +26,7 @@ describe.skipIf(!configured)("real disposable PostgreSQL voice-session adapter",
     const request = { organizationId, agentId, actorId, sessionId, microphoneConsent: true, providerActivationEnabled: false as const, maxDurationSeconds: 60, noRecording: true as const };
     const deps = { executor, resolveKey: (key: string) => key === "ci-offline" ? "ci-offline-secret" : undefined, now: () => now + 1, policy: () => ({ emergencyStop: false, concurrencyAvailable: true, usageAvailable: true }), disposableEnvironment: true };
     const admitted = await startPostgresVoiceSession({ request, admission: { claims, signature: signAdmission(claims, "ci-offline-secret") }, authorization, context }, deps);
+    if (!admitted.ok) throw new Error(`adapter admission failed: ${JSON.stringify(admitted)}`);
     expect(admitted).toMatchObject({ ok: true, session: { simulationOnly: true, providerActivationEnabled: false, reused: false } });
     const persisted = await pool.query("select consumed_at is not null consumed, released_at is null active from public.voice_session_authorizations where assertion_id=$1", [assertionId]);
     expect(persisted.rows[0]).toEqual({ consumed: true, active: true });
