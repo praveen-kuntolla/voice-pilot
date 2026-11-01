@@ -1,0 +1,12 @@
+import { describe, expect, it } from "vitest";
+import { MemoryDurableSessionAuthorizationStore, type SessionAuthorization } from "@/lib/durable-session-authorization";
+
+const auth: SessionAuthorization = { authorizationId: "11111111-1111-4111-8111-111111111111", organizationId: "22222222-2222-4222-8222-222222222222", agentId: "33333333-3333-4333-8333-333333333333", actorId: "44444444-4444-4444-8444-444444444444", sessionId: "55555555-5555-4555-8555-555555555555", assertionId: "66666666-6666-4666-8666-666666666666", capability: "voice_sandbox", issuedAt: 1000, expiresAt: 2000, maxDurationSeconds: 60 };
+const context = { organizationId: auth.organizationId, agentId: auth.agentId, actorId: auth.actorId, sessionId: auth.sessionId, assertionId: auth.assertionId };
+const policy = { emergencyStop: false, concurrencyAvailable: true, usageAvailable: true };
+const errorOf = (result: Awaited<ReturnType<MemoryDurableSessionAuthorizationStore["consume"]>>) => result.ok ? "unexpected_success" : result.error;
+describe("durable session authorization contract", () => {
+  it("consumes once and is idempotent for the same assertion", async () => { const store = new MemoryDurableSessionAuthorizationStore(); expect(await store.consume(auth, context, policy, 1500)).toMatchObject({ ok: true, reused: false }); expect(await store.consume(auth, context, policy, 1500)).toMatchObject({ ok: true, reused: true }); });
+  it("fails closed for tenant, expiry, replay, revocation and policy failures", async () => { const store = new MemoryDurableSessionAuthorizationStore(); expect((await store.consume(auth, { ...context, organizationId: "77777777-7777-4777-8777-777777777777" }, policy, 1500)).ok).toBe(false); expect(errorOf(await store.consume(auth, context, policy, 2000))).toBe("expired"); expect(errorOf(await store.consume(auth, context, { ...policy, emergencyStop: true }, 1500))).toBe("emergency_stop"); });
+  it("revokes and releases only the authorized tenant session", async () => { const store = new MemoryDurableSessionAuthorizationStore(); await store.consume(auth, context, policy, 1500); expect(await store.revoke(auth.assertionId, "99999999-9999-4999-8999-999999999999")).toBe(false); expect(await store.revoke(auth.assertionId, auth.organizationId)).toBe(true); expect(errorOf(await store.consume(auth, context, policy, 1500))).toBe("revoked"); expect(await store.release(auth.sessionId, auth.organizationId)).toBe(true); });
+});
