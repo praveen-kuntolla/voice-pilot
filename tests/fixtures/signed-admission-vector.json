@@ -1,0 +1,19 @@
+{
+  "secret": "offline-test-signing-key",
+  "claims": {
+    "version": 1,
+    "keyId": "test-key-1",
+    "assertionId": "22222222-2222-4222-8222-222222222222",
+    "organizationId": "org-a",
+    "agentId": "agent-a",
+    "actorId": "user-a",
+    "sessionId": "11111111-1111-4111-8111-111111111111",
+    "issuedAt": 1000,
+    "expiresAt": 2000,
+    "capability": "voice_sandbox",
+    "maxDurationSeconds": 60,
+    "usageLimit": { "inputCharacters": 100, "outputCharacters": 200 },
+    "providerActivationEnabled": false
+  },
+  "signature": "2845d640441940466f6dd2506caf0701c12c52cf1b84937bdce3040823672410"
+}

@@ -7,12 +7,14 @@ on:
       - feature/phase-10a-provider-sandbox-readiness
       - feature/phase-10b-sandbox-authorization
       - feature/phase-10b2-secure-livekit-admission
+      - feature/phase-10b3-signed-worker-admission
   pull_request:
     branches:
       - master
       - feature/phase-9-call-lifecycle-contract
       - feature/phase-10a-provider-sandbox-readiness
       - feature/phase-10b-sandbox-authorization
+      - feature/phase-10b2-secure-livekit-admission
     paths:
       - ".github/workflows/pr20-offline-quality.yml"
       - "src/app/dashboard/agents/test/**"
