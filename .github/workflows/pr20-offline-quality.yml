@@ -51,6 +51,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: voicepilot-offline-quality-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
     name: TypeScript, ESLint, Vitest and build (offline)
