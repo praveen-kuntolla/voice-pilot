@@ -6,11 +6,13 @@ on:
       - feature/phase-6-agent-test-studio
       - feature/phase-10a-provider-sandbox-readiness
       - feature/phase-10b-sandbox-authorization
+      - feature/phase-10b2-secure-livekit-admission
   pull_request:
     branches:
       - master
       - feature/phase-9-call-lifecycle-contract
       - feature/phase-10a-provider-sandbox-readiness
+      - feature/phase-10b-sandbox-authorization
     paths:
       - ".github/workflows/pr20-offline-quality.yml"
       - "src/app/dashboard/agents/test/**"
