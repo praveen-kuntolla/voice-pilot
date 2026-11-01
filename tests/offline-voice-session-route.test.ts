@@ -1,0 +1,3 @@
+import { describe, expect, it } from "vitest";
+import { POST } from "@/app/api/voice-session/offline/route";
+describe("offline voice-session route boundary", () => { it("fails closed when disposable PostgreSQL runtime is not explicitly enabled", async () => { const original = process.env.VOICE_SESSION_POSTGRES_DISPOSABLE; delete process.env.VOICE_SESSION_POSTGRES_DISPOSABLE; const response = await POST(new Request("http://localhost/api/voice-session/offline", { method: "POST", body: JSON.stringify({ agent_id: "11111111-1111-4111-8111-111111111111", microphone_consent: true }) })); expect([401, 503]).toContain(response.status); if (original) process.env.VOICE_SESSION_POSTGRES_DISPOSABLE = original; }); });

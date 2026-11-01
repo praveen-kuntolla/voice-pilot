@@ -37,3 +37,13 @@ The adapter and contract tests are present, but this worktree does not contain
 approved fixture metadata, so authenticated browser and disposable PostgreSQL
 acceptance are not claimed until the isolated environment is available. The
 voice UI remains disabled and no real provider connectivity is authorized.
+
+## Phase 12B runtime boundary
+
+The protected `/api/voice-session/offline` route wires authenticated
+organization/agent selection to the PostgreSQL adapter, but it can run only
+when `VOICE_SESSION_POSTGRES_DISPOSABLE=true`,
+`VOICE_OFFLINE_ADMISSION_TEST_ENABLED=true`, a loopback disposable
+`GATEWAY_DATABASE_URL`, and a server-only test secret are present. It is never
+enabled in production and never falls back to memory. It remains text/session
+state only; it does not issue LiveKit tokens or request a microphone.
