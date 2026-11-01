@@ -10,7 +10,7 @@ The schema complements the existing durable safety tables from migrations 012–
 
 ## Transaction boundary
 
-Production routines must verify trusted actor/organization context, emergency stop, expiry, revocation, replay, concurrency, and usage in one transaction. A failed check or audit insert must roll back every reservation. Completion and cancellation must release reservations idempotently. The TypeScript memory store in this branch is an offline contract only and is not production durability.
+Migration 018 adds review-only SECURITY DEFINER routines for creation, exactly-once consumption, revocation, and idempotent release. They bind transaction-local actor and organization context, serialize organization admission with an advisory transaction lock, check expiry/revocation/emergency stop, and write sanitized audit transitions in the same transaction. A failed check or audit insert must roll back every reservation. The TypeScript memory store remains an offline contract only and is not production durability; migration 018 must still be composed with the existing replay, quota, and provider-action reservations before any real admission.
 
 ## RLS and privilege boundary
 
@@ -18,7 +18,7 @@ The review-only tables have RLS enabled and no client policies. Client roles mus
 
 ## Verification and limitations
 
-Focused unit tests cover validation, tenant mismatch, expiry, idempotent consumption, emergency stop, revocation, and release. PostgreSQL acceptance is **NOT RUN** unless a newly provisioned disposable database is independently verified; established local ledger 001–011 remains unchanged. Durable replay across processes, key management, distributed usage/concurrency, provider-specific controls, and real participant termination remain open production requirements.
+Focused unit tests cover validation, tenant mismatch, expiry, idempotent consumption, emergency stop, revocation, and release. Disposable PostgreSQL acceptance for migrations 017–018 covers authorization creation, consumption, replay idempotency, tenant rejection, release, and audit evidence; the established local ledger 001–011 remains unchanged. Concurrent two-process claims, durable replay across process restarts, fault-injected rollback, key management, and composition with all provider-action reservations remain open production requirements.
 
 ## Approval gates
 
