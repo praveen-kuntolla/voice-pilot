@@ -16,15 +16,6 @@ create index if not exists provider_session_reservations_org_idx on voicepilot_s
 create index if not exists provider_session_reservations_agent_idx on voicepilot_safety.provider_session_reservations(agent_id,state,expires_at);
 alter table voicepilot_safety.provider_session_reservations enable row level security;
 
-create table if not exists voicepilot_safety.provider_usage_accounts(
-  organization_id uuid primary key references public.organizations(id) on delete cascade,
-  reserved_units bigint not null default 0 check(reserved_units >= 0),
-  consumed_units bigint not null default 0 check(consumed_units >= 0),
-  max_units bigint not null default 0 check(max_units >= 0),
-  updated_at timestamptz not null default clock_timestamp()
-);
-alter table voicepilot_safety.provider_usage_accounts enable row level security;
-
 create table if not exists voicepilot_safety.provider_usage_events(
   organization_id uuid not null references public.organizations(id) on delete cascade,
   event_id uuid not null,
@@ -82,13 +73,13 @@ begin
   if p_org is null or p_event is null or p_session is null or p_units is null or p_units<0 or p_units>1000000000 or p_max_units is null or p_max_units<0
     or nullif(current_setting('voicepilot.organization_id',true),'')::uuid is distinct from p_org then return jsonb_build_object('ok',false,'error','invalid_or_unauthorized'); end if;
   perform pg_advisory_xact_lock(hashtextextended('usage:'||p_org::text,0));
-  insert into voicepilot_safety.provider_usage_accounts(organization_id,max_units) values(p_org,p_max_units) on conflict(organization_id) do update set max_units=excluded.max_units,updated_at=clock_timestamp();
+  insert into voicepilot_safety.provider_usage_accounts(organization_id,budget_cents) values(p_org,p_max_units) on conflict(organization_id) do update set budget_cents=excluded.budget_cents;
   select * into account from voicepilot_safety.provider_usage_accounts where organization_id=p_org for update;
-  if exists(select 1 from voicepilot_safety.provider_usage_events where organization_id=p_org and event_id=p_event) then return jsonb_build_object('ok',true,'reused',true,'consumedUnits',account.consumed_units); end if;
-  if account.consumed_units+account.reserved_units+p_units>account.max_units then return jsonb_build_object('ok',false,'error','usage_limit'); end if;
+  if exists(select 1 from voicepilot_safety.provider_usage_events where organization_id=p_org and event_id=p_event) then return jsonb_build_object('ok',true,'reused',true,'consumedUnits',account.used_cents); end if;
+  if account.used_cents+account.reserved_cents+p_units>account.budget_cents then return jsonb_build_object('ok',false,'error','usage_limit'); end if;
   insert into voicepilot_safety.provider_usage_events(organization_id,event_id,session_id,units) values(p_org,p_event,p_session,p_units);
-  update voicepilot_safety.provider_usage_accounts set reserved_units=reserved_units+p_units,updated_at=clock_timestamp() where organization_id=p_org;
-  return jsonb_build_object('ok',true,'reused',false,'reservedUnits',account.reserved_units+p_units);
+  update voicepilot_safety.provider_usage_accounts set reserved_cents=reserved_cents+p_units where organization_id=p_org;
+  return jsonb_build_object('ok',true,'reused',false,'reservedUnits',account.reserved_cents+p_units);
 end $$;
 
 create or replace function voicepilot_safety.settle_provider_usage(p_org uuid,p_event uuid)
@@ -99,7 +90,7 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('usage:'||p_org::text,0));
   select units into units_to_settle from voicepilot_safety.provider_usage_events where organization_id=p_org and event_id=p_event for update;
   if not found then return false; end if;
-  update voicepilot_safety.provider_usage_accounts set reserved_units=greatest(0,reserved_units-units_to_settle),consumed_units=consumed_units+units_to_settle,updated_at=clock_timestamp() where organization_id=p_org;
+  update voicepilot_safety.provider_usage_accounts set reserved_cents=reserved_cents-units_to_settle,used_cents=used_cents+units_to_settle where organization_id=p_org;
   delete from voicepilot_safety.provider_usage_events where organization_id=p_org and event_id=p_event;
   return true;
 end $$;
@@ -112,7 +103,7 @@ begin
   perform pg_advisory_xact_lock(hashtextextended('usage:'||p_org::text,0));
   select units into units_to_release from voicepilot_safety.provider_usage_events where organization_id=p_org and event_id=p_event for update;
   if not found then return false; end if;
-  update voicepilot_safety.provider_usage_accounts set reserved_units=greatest(0,reserved_units-units_to_release),updated_at=clock_timestamp() where organization_id=p_org;
+  update voicepilot_safety.provider_usage_accounts set reserved_cents=greatest(0,reserved_cents-units_to_release) where organization_id=p_org;
   delete from voicepilot_safety.provider_usage_events where organization_id=p_org and event_id=p_event;
   return true;
 end $$;
