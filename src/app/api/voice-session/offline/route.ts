@@ -18,6 +18,7 @@ function runtime() {
   if (process.env.VOICE_OFFLINE_ADMISSION_TEST_ENABLED !== "true") { runtimeFailureStage = "test_flag"; return null; }
   if (!url) { runtimeFailureStage = "database_url"; return null; }
   if (!secret) { runtimeFailureStage = "secret"; return null; }
+  runtimeFailureStage = "pool";
   const pool = createDisposableLocalGatewayPool({ connectionString: url, max: 2 });
   return { pool, executor: new PostgresTransactionExecutor(pool, { statementTimeoutMs: 5_000, databaseRole: "service_role" }), secret };
 }

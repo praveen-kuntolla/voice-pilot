@@ -243,7 +243,11 @@ jobs:
         shell: bash
         run: |
           if test -n "${CI_GATEWAY_DB:-}"; then
-            dropdb --if-exists --dbname="$DB_URL" "$CI_GATEWAY_DB"
+            case "$CI_GATEWAY_DB" in
+              vp_gateway_ci_[0-9]*) ;;
+              *) echo "Unexpected disposable database name"; exit 1 ;;
+            esac
+            psql "$DB_URL" -v ON_ERROR_STOP=1 -c "drop database if exists \"$CI_GATEWAY_DB\""
             if psql "$DB_URL" -Atc "select 1 from pg_database where datname='${CI_GATEWAY_DB}'" | grep -q 1; then echo "Gateway database teardown verification failed"; exit 1; fi
           fi
           npx supabase stop --no-backup
