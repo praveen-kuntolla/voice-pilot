@@ -153,6 +153,7 @@ jobs:
       NEXT_TELEMETRY_DISABLED: "1"
       VOICE_SESSION_POSTGRES_DISPOSABLE: "true"
       VOICE_OFFLINE_ADMISSION_TEST_ENABLED: "true"
+      VOICE_OFFLINE_ADMISSION_CI: "true"
       VOICE_REALTIME_ENABLED: "false"
       VOICE_OUTBOUND_ENABLED: "false"
       VOICE_PROVIDER_ACTIVATION_ENABLED: "false"
@@ -190,7 +191,9 @@ jobs:
           echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$anon_key" >> "$GITHUB_ENV"
           echo "SUPABASE_SERVICE_ROLE_KEY=$service_role_key" >> "$GITHUB_ENV"
           echo "GATEWAY_DATABASE_URL=$db_url" >> "$GITHUB_ENV"
-          echo "VOICE_OFFLINE_ADMISSION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          admission_secret=$(openssl rand -hex 32)
+          echo "::add-mask::$admission_secret"
+          echo "VOICE_OFFLINE_ADMISSION_SECRET=$admission_secret" >> "$GITHUB_ENV"
           echo "CI_E2E_FIXTURE_STATE=$RUNNER_TEMP/voicepilot-fixtures.json" >> "$GITHUB_ENV"
       - name: Provision synthetic disposable fixtures
         id: provision
@@ -239,5 +242,8 @@ jobs:
         if: always()
         shell: bash
         run: |
-          if test -n "${CI_GATEWAY_DB:-}"; then dropdb "$CI_GATEWAY_DB" --if-exists || true; fi
+          if test -n "${CI_GATEWAY_DB:-}"; then
+            dropdb --if-exists --dbname="$DB_URL" "$CI_GATEWAY_DB"
+            if psql "$DB_URL" -Atc "select 1 from pg_database where datname='${CI_GATEWAY_DB}'" | grep -q 1; then echo "Gateway database teardown verification failed"; exit 1; fi
+          fi
           npx supabase stop --no-backup

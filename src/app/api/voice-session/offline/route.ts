@@ -8,14 +8,16 @@ import { issueOfflineSandboxAssertion } from "@/lib/offline-admission-issuer";
 
 const startSchema = z.object({ agent_id: z.string().uuid(), microphone_consent: z.literal(true) }).strict();
 const cancelSchema = z.object({ agent_id: z.string().uuid(), session_id: z.string().uuid(), assertion_id: z.string().uuid() }).strict();
-function unavailable(stage = "runtime") { return NextResponse.json({ error: "Offline voice session is unavailable", ...(process.env.VOICE_OFFLINE_ADMISSION_DIAGNOSTICS === "true" ? { stage } : {}) }, { status: 503, headers: { "Cache-Control": "no-store" } }); }
+let runtimeFailureStage = "runtime";
+function unavailable(stage = runtimeFailureStage) { return NextResponse.json({ error: "Offline voice session is unavailable", ...(process.env.VOICE_OFFLINE_ADMISSION_DIAGNOSTICS === "true" ? { stage } : {}) }, { status: 503, headers: { "Cache-Control": "no-store" } }); }
 function runtime() {
   const url = process.env.GATEWAY_DATABASE_URL;
   const secret = process.env.VOICE_OFFLINE_ADMISSION_SECRET;
-  if (process.env.NODE_ENV === "production") return null;
-  if (process.env.VOICE_SESSION_POSTGRES_DISPOSABLE !== "true") return null;
-  if (process.env.VOICE_OFFLINE_ADMISSION_TEST_ENABLED !== "true") return null;
-  if (!url || !secret) return null;
+  if (process.env.NODE_ENV === "production") { runtimeFailureStage = "production"; return null; }
+  if (process.env.VOICE_SESSION_POSTGRES_DISPOSABLE !== "true") { runtimeFailureStage = "disposable_flag"; return null; }
+  if (process.env.VOICE_OFFLINE_ADMISSION_TEST_ENABLED !== "true") { runtimeFailureStage = "test_flag"; return null; }
+  if (!url) { runtimeFailureStage = "database_url"; return null; }
+  if (!secret) { runtimeFailureStage = "secret"; return null; }
   const pool = createDisposableLocalGatewayPool({ connectionString: url, max: 2 });
   return { pool, executor: new PostgresTransactionExecutor(pool, { statementTimeoutMs: 5_000, databaseRole: "service_role" }), secret };
 }
