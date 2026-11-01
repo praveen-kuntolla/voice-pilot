@@ -29,6 +29,7 @@ async function setup() {
   await insert("campaigns", { id: ids.campaign, organization_id: ids.org, agent_id: ids.agent, name: "CI Disposable Campaign", status: "draft", timezone: "UTC", start_hour: 0, end_hour: 23, consent_required: true, created_by: user.id });
   const values = { CI_E2E_EMAIL: email, CI_E2E_PASSWORD: password, CI_E2E_USER_ID: user.id, CI_E2E_OTHER_USER_ID: other.id, CI_E2E_ORG_ID: ids.org, CI_E2E_AGENT_ID: ids.agent, CI_E2E_CONTACT_ID: ids.contact, CI_E2E_CAMPAIGN_ID: ids.campaign };
   const envFile = process.env.GITHUB_ENV; if (!envFile) throw new Error("GITHUB_ENV is required; refusing to emit fixture credentials");
+  console.log(`::add-mask::${password}`);
   appendFileSync(envFile, Object.entries(values).map(([key, value]) => `${key}=${value}`).join("\n") + "\n", { encoding: "utf8", mode: 0o600 });
   console.log("Disposable synthetic fixtures created in the protected CI environment.");
 }
