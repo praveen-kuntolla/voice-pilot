@@ -11,6 +11,7 @@ on:
       - feature/phase-10b4-offline-admission-integration
       - feature/phase-11b-durable-session-authorization
       - feature/phase-11b1-transactional-admission
+      - feature/phase-11b2-distributed-admission-verification
       - feature/phase-10c-integration-hardening
       - feature/phase-11b-durable-session-authorization
       - feature/phase-11b1-transactional-admission
@@ -24,6 +25,8 @@ on:
       - feature/phase-10b2-secure-livekit-admission
       - feature/phase-10b3-signed-worker-admission
       - feature/phase-10b4-offline-admission-integration
+      - feature/phase-11b1-transactional-admission
+      - feature/phase-11b2-distributed-admission-verification
     paths:
       - ".github/workflows/pr20-offline-quality.yml"
       - "src/app/dashboard/agents/test/**"
