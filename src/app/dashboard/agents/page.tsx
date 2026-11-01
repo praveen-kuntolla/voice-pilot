@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { Bot, Mic2, ShieldCheck } from "lucide-react";
 import { AgentProviderGovernance } from "@/components/agent-provider-governance";
+import { VoiceSandboxPreparation } from "@/components/voice-sandbox-preparation";
 
 type Agent = { id: string; name: string; instructions: string; language: string; voice_id?: string; status: string };
 const empty = { name: "", instructions: "", language: "en-US", voice_id: "", status: "draft" };
@@ -68,6 +69,7 @@ export default function Agents() {
         </div>
       </div>
       {message && <p className="notice" role="status">{message}</p>}
+      <VoiceSandboxPreparation />
     </div>
   </main>;
 }
