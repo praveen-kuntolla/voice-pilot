@@ -62,12 +62,12 @@ try {
   run(db, `create or replace function public.test_fail_consumed_audit() returns trigger language plpgsql as $$ begin if new.action='consumed' then raise exception 'synthetic audit failure'; end if; return new; end $$; create trigger test_fail_consumed_audit before insert on public.voice_session_audit_events for each row execute function public.test_fail_consumed_audit();`);
   const faultAuth = uuid(), faultSession = uuid(), faultAssertion = uuid();
   run(db, `begin; ${context} select public.create_voice_session_authorization('${faultAuth}','${org}','${agent}','${actor}','${faultSession}','${faultAssertion}',clock_timestamp(),clock_timestamp()+interval '5 minutes'); commit;`);
-  let auditFailed = false; try { run(db, `begin; ${context} select public.consume_voice_session_authorization('${faultAssertion}','${org}','${actor}',clock_timestamp(),1,3600); commit;`); } catch { auditFailed = true; }
+  let auditFailed = false; try { run(db, `begin; ${context} select public.consume_voice_session_authorization('${faultAssertion}','${org}','${actor}',clock_timestamp(),10,36000); commit;`); } catch { auditFailed = true; }
   if (!auditFailed) throw new Error("audit fault injection did not fail closed");
   const rolledBack = psql(db, `select (consumed_at is null)::text || ':' || usage_reserved_seconds::text from public.voice_session_authorizations where assertion_id='${faultAssertion}'`);
   if (rolledBack !== "t:0") throw new Error(`audit failure left a partial authorization reservation: ${rolledBack}`);
   run(db, "drop trigger test_fail_consumed_audit on public.voice_session_audit_events; drop function public.test_fail_consumed_audit();");
-  const retryAfterFault = run(db, `begin; ${context} select public.consume_voice_session_authorization('${faultAssertion}','${org}','${actor}',clock_timestamp(),1,3600); commit;`);
+  const retryAfterFault = run(db, `begin; ${context} select public.consume_voice_session_authorization('${faultAssertion}','${org}','${actor}',clock_timestamp(),10,36000); commit;`);
   if (!/\"ok\"\s*:\s*true/.test(retryAfterFault)) throw new Error(`same authorization could not retry after rollback: ${retryAfterFault}`);
   console.log("LINUX_SESSION_ADMISSION_OK pre-commit crash rollback, post-commit lost-result recovery, replay, revoke/consume race, audit-fault rollback and database-unavailable checks passed");
 } finally { if (created) { try { execFileSync("dropdb", ["-h", base.host, "-p", base.port, "-U", base.user, "--if-exists", db], { env, timeout: 30_000, stdio: "ignore" }); } catch { process.exitCode = 1; } } }
