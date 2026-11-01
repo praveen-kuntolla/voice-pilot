@@ -18,10 +18,10 @@ describe.skipIf(!configured)("real disposable PostgreSQL voice-session adapter",
   it("creates, consumes, persists, releases and rejects a tenant-mismatched session", async () => {
     const sessionId = crypto.randomUUID();
     const assertionId = crypto.randomUUID();
-    const created = await createPostgresVoiceAuthorization({ organizationId, agentId, actorId, sessionId, assertionId, issuedAt: now, expiresAt: now + 300_000 }, { executor, disposableEnvironment: true });
+    const created = await createPostgresVoiceAuthorization({ organizationId, agentId, actorId, sessionId, assertionId, issuedAt: now, expiresAt: now + 60_000 }, { executor, disposableEnvironment: true });
     expect(created.ok).toBe(true);
     const authorization: SessionAuthorization = created.ok ? created.authorization : { authorizationId: "", organizationId, agentId, actorId, sessionId, assertionId, capability: "voice_sandbox", issuedAt: now, expiresAt: now + 300_000, maxDurationSeconds: 60 };
-    const claims = { version: 1 as const, keyId: "ci-offline", assertionId, organizationId, agentId, actorId, sessionId, issuedAt: now, expiresAt: now + 300_000, capability: "voice_sandbox" as const, maxDurationSeconds: 60, usageLimit: { inputCharacters: 100, outputCharacters: 100 }, providerActivationEnabled: false as const };
+    const claims = { version: 1 as const, keyId: "ci-offline", assertionId, organizationId, agentId, actorId, sessionId, issuedAt: now, expiresAt: now + 60_000, capability: "voice_sandbox" as const, maxDurationSeconds: 60, usageLimit: { inputCharacters: 100, outputCharacters: 100 }, providerActivationEnabled: false as const };
     const context = { organizationId, agentId, actorId, sessionId, assertionId };
     const request = { organizationId, agentId, actorId, sessionId, microphoneConsent: true, providerActivationEnabled: false as const, maxDurationSeconds: 60, noRecording: true as const };
     const deps = { executor, resolveKey: (key: string) => key === "ci-offline" ? "ci-offline-secret" : undefined, now: () => now + 1, policy: () => ({ emergencyStop: false, concurrencyAvailable: true, usageAvailable: true }), disposableEnvironment: true };
