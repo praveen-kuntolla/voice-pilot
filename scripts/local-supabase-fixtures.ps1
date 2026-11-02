@@ -73,7 +73,12 @@ $orgB = [Guid]::NewGuid().ToString()
 $agentA = [Guid]::NewGuid().ToString()
 $agentB = [Guid]::NewGuid().ToString()
 $contactA = [Guid]::NewGuid().ToString()
+$contactUnknown = [Guid]::NewGuid().ToString()
+$contactRevoked = [Guid]::NewGuid().ToString()
+$contactOptedOut = [Guid]::NewGuid().ToString()
+$contactB = [Guid]::NewGuid().ToString()
 $campaignA = [Guid]::NewGuid().ToString()
+$campaignB = [Guid]::NewGuid().ToString()
 Insert-Local 'profiles' @{ id=$userA.id; full_name='VoicePilot E2E A' } | Out-Null
 Insert-Local 'profiles' @{ id=$userB.id; full_name='VoicePilot E2E B' } | Out-Null
 Insert-Local 'profiles' @{ id=$userC.id; full_name='VoicePilot E2E C' } | Out-Null
@@ -86,7 +91,12 @@ Insert-Local 'organization_members' @{ organization_id=$orgB; user_id=$userA.id;
 Insert-Local 'agents' @{ id=$agentA; organization_id=$orgA; name='E2E Agent A'; instructions='Local test agent'; language='en-US'; status='draft'; created_by=$userA.id } | Out-Null
 Insert-Local 'agents' @{ id=$agentB; organization_id=$orgB; name='E2E Agent B'; instructions='Local test agent'; language='en-US'; status='draft'; created_by=$userB.id } | Out-Null
 Insert-Local 'contacts' @{ id=$contactA; organization_id=$orgA; name='E2E Contact A'; email='contact-a@example.test'; phone='+15550000001'; consent_status='granted' } | Out-Null
+Insert-Local 'contacts' @{ id=$contactUnknown; organization_id=$orgA; name='E2E Unknown Consent'; email='unknown@example.test'; phone='+15550000002'; consent_status='unknown' } | Out-Null
+Insert-Local 'contacts' @{ id=$contactRevoked; organization_id=$orgA; name='E2E Revoked Consent'; email='revoked@example.test'; phone='+15550000003'; consent_status='revoked' } | Out-Null
+Insert-Local 'contacts' @{ id=$contactOptedOut; organization_id=$orgA; name='E2E Opted Out'; email='opted-out@example.test'; phone='+15550000004'; consent_status='granted'; opted_out_at=(Get-Date).ToUniversalTime().ToString('o') } | Out-Null
+Insert-Local 'contacts' @{ id=$contactB; organization_id=$orgB; name='E2E Other Tenant'; email='other@example.test'; phone='+15550000005'; consent_status='granted' } | Out-Null
 Insert-Local 'campaigns' @{ id=$campaignA; organization_id=$orgA; agent_id=$agentA; name='E2E Campaign A'; status='draft'; timezone='UTC'; start_hour=9; end_hour=17; consent_required=$true; created_by=$userA.id } | Out-Null
+Insert-Local 'campaigns' @{ id=$campaignB; organization_id=$orgB; agent_id=$agentB; name='E2E Campaign B'; status='draft'; timezone='UTC'; start_hour=9; end_hour=17; consent_required=$true; created_by=$userB.id } | Out-Null
 
 @{
   api_url = [string]$status.API_URL
@@ -99,8 +109,8 @@ Insert-Local 'campaigns' @{ id=$campaignA; organization_id=$orgA; agent_id=$agen
     organizations = @($orgA,$orgB)
     organization_members = @()
     agents = @($agentA,$agentB)
-    contacts = @($contactA)
-    campaigns = @($campaignA)
+    contacts = @($contactA,$contactUnknown,$contactRevoked,$contactOptedOut,$contactB)
+    campaigns = @($campaignA,$campaignB)
   }
 } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $metadataPath -Encoding UTF8
 

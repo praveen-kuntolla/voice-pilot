@@ -6,6 +6,7 @@ import { PlatformReadinessPanel } from "@/components/platform-readiness-panel";
 import { buildSimulationReport, simulationReportCsv } from "@/lib/simulation-report";
 import { appendSyntheticActivity } from "@/lib/simulation-activity";
 import Link from "next/link";
+import { CampaignReadinessPreview } from "@/components/campaign-readiness-preview";
 
 type Campaign = SimCampaign & { name: string };
 type Agent = { id: string; name: string; organization_id?: string };
@@ -42,6 +43,7 @@ export function CampaignSimulationStudio() {
     <p className="muted">Synthetic only. No calls, providers, reminders, calendar events or business records are created.</p>
     <label className="label">Campaign<select className="select" aria-label="Simulation campaign" value={campaignId} onChange={(event) => { sequence.current++; controller.current?.abort(); setCampaignId(event.target.value); setSimulation(null); setPreflight(null); setSelectedInteractionId(""); setCallback(null); setAppointment(null); }}><option value="">Select a campaign</option>{campaigns.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.status}</option>)}</select></label>
     {campaign && <>
+      <CampaignReadinessPreview campaignId={campaign.id} />
       <p className="muted">Assigned agent: {agent?.name ?? "Not assigned"} · queue supplied by server preflight.</p>
       <div className="grid"><label className="label">Service<input className="input" value={service} onChange={(event) => setService(event.target.value)} /></label><label className="label">Purchase intent<select className="select" value={purchase} onChange={(event) => setPurchase(event.target.value as typeof purchase)}><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option></select></label><label className="label">Budget<select className="select" value={budget} onChange={(event) => setBudget(event.target.value as typeof budget)}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label><label className="label">Timing<select className="select" value={timing} onChange={(event) => setTiming(event.target.value as typeof timing)}><option value="now">Now</option><option value="later">Later</option></select></label></div>
       <label className="label">Mock outcome<select className="select" value={outcome} onChange={(event) => setOutcome(event.target.value as MockOutcome)}>{["interested", "callback_requested", "appointment_requested", "not_interested", "no_answer", "busy", "wrong_number", "opted_out", "error"].map((value) => <option key={value} value={value}>{value.replaceAll("_", " ")}</option>)}</select></label>
