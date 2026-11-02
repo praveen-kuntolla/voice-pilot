@@ -4,9 +4,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$localRoot = Join-Path $PSScriptRoot '..\.local'
+$localRoot = if ($env:VOICEPILOT_FIXTURE_ROOT) { $env:VOICEPILOT_FIXTURE_ROOT } else { Join-Path $PSScriptRoot '..\.local' }
 $metadataPath = Join-Path $localRoot 'voicepilot-local-loopback-fixtures.json'
-$composeEnvPath = Join-Path $localRoot 'supabase-loopback-source\docker\.env'
+$composeEnvPath = Join-Path $PSScriptRoot '..\.local\supabase-loopback-source\docker\.env'
 
 function Get-LocalStatus {
   if (-not (Test-Path -LiteralPath $composeEnvPath)) { throw 'Unable to find the isolated local Supabase configuration.' }
@@ -43,7 +43,13 @@ if ($Action -eq 'cleanup') {
     }
   }
   foreach ($userId in @($fixture.users.id)) {
-    if ($userId) { Invoke-LocalAdmin -Method 'Delete' -Path "/auth/v1/admin/users/$userId" -Body $null -Status $status | Out-Null }
+    if ($userId) {
+      try { $owned = Invoke-LocalAdmin -Method 'Get' -Path ("/rest/v1/organizations?created_by=eq.{0}&select=id" -f $userId) -Body $null -Status $status } catch { if ($_.Exception.Message -match 'user_not_found') { $owned = @() } else { throw } }
+      foreach ($organization in @($owned)) { if ($organization.id) { Invoke-LocalAdmin -Method 'Delete' -Path ("/rest/v1/organizations?id=eq.{0}" -f $organization.id) -Body $null -Status $status | Out-Null } }
+    }
+  }
+  foreach ($userId in @($fixture.users.id)) {
+    if ($userId) { try { Invoke-LocalAdmin -Method 'Delete' -Path "/auth/v1/admin/users/$userId" -Body $null -Status $status | Out-Null } catch { if ($_.Exception.Message -notmatch 'user_not_found') { throw } } }
   }
   Remove-Item -LiteralPath $metadataPath -Force
   Write-Output 'Local fixtures cleaned up.'
@@ -55,13 +61,20 @@ New-Item -ItemType Directory -Path $localRoot -Force | Out-Null
 $passwordA = 'VpE2!' + ([Guid]::NewGuid().ToString('N').Substring(0, 20))
 $passwordB = 'VpE2!' + ([Guid]::NewGuid().ToString('N').Substring(0, 20))
 $passwordC = 'VpE2!' + ([Guid]::NewGuid().ToString('N').Substring(0, 20))
-$emailA = 'voicepilot.e2e.a@example.test'
-$emailB = 'voicepilot.e2e.b@example.test'
-$emailC = 'voicepilot.e2e.c@example.test'
+$passwordD = 'Vp2D!' + ([Guid]::NewGuid().ToString('N').Substring(0, 20))
+$passwordE = 'Vp2V!' + ([Guid]::NewGuid().ToString('N').Substring(0, 20))
+$suffix = if ($env:VOICEPILOT_FIXTURE_SUFFIX) { "." + $env:VOICEPILOT_FIXTURE_SUFFIX } else { '' }
+$emailA = "voicepilot.e2e.a$suffix@example.test"
+$emailB = "voicepilot.e2e.b$suffix@example.test"
+$emailC = "voicepilot.e2e.c$suffix@example.test"
+$emailD = "voicepilot.e2e.d$suffix@example.test"
+$emailE = "voicepilot.e2e.e$suffix@example.test"
 
 $userA = Invoke-LocalAdmin -Method 'Post' -Path '/auth/v1/admin/users' -Body @{ email = $emailA; password = $passwordA; email_confirm = $true; user_metadata = @{ full_name = 'VoicePilot E2E A' } } -Status $status
 $userB = Invoke-LocalAdmin -Method 'Post' -Path '/auth/v1/admin/users' -Body @{ email = $emailB; password = $passwordB; email_confirm = $true; user_metadata = @{ full_name = 'VoicePilot E2E B' } } -Status $status
 $userC = Invoke-LocalAdmin -Method 'Post' -Path '/auth/v1/admin/users' -Body @{ email = $emailC; password = $passwordC; email_confirm = $true; user_metadata = @{ full_name = 'VoicePilot E2E C' } } -Status $status
+$userD = Invoke-LocalAdmin -Method 'Post' -Path '/auth/v1/admin/users' -Body @{ email = $emailD; password = $passwordD; email_confirm = $true; user_metadata = @{ full_name = 'VoicePilot E2E Fresh' } } -Status $status
+$userE = Invoke-LocalAdmin -Method 'Post' -Path '/auth/v1/admin/users' -Body @{ email = $emailE; password = $passwordE; email_confirm = $true; user_metadata = @{ full_name = 'VoicePilot E2E Viewer' } } -Status $status
 
 function Insert-Local {
   param([string]$Table, [object]$Body)
@@ -73,6 +86,7 @@ $orgB = [Guid]::NewGuid().ToString()
 $agentA = [Guid]::NewGuid().ToString()
 $agentB = [Guid]::NewGuid().ToString()
 $contactA = [Guid]::NewGuid().ToString()
+$contactEligible2 = [Guid]::NewGuid().ToString()
 $contactUnknown = [Guid]::NewGuid().ToString()
 $contactRevoked = [Guid]::NewGuid().ToString()
 $contactOptedOut = [Guid]::NewGuid().ToString()
@@ -82,15 +96,18 @@ $campaignB = [Guid]::NewGuid().ToString()
 Insert-Local 'profiles' @{ id=$userA.id; full_name='VoicePilot E2E A' } | Out-Null
 Insert-Local 'profiles' @{ id=$userB.id; full_name='VoicePilot E2E B' } | Out-Null
 Insert-Local 'profiles' @{ id=$userC.id; full_name='VoicePilot E2E C' } | Out-Null
+Insert-Local 'profiles' @{ id=$userE.id; full_name='VoicePilot E2E Viewer' } | Out-Null
 Insert-Local 'organizations' @{ id=$orgA; name='E2E Workspace A'; industry='Testing'; country='IN'; timezone='Asia/Calcutta'; business_use_case='Local isolated tests'; created_by=$userA.id } | Out-Null
 Insert-Local 'organizations' @{ id=$orgB; name='E2E Workspace B'; industry='Testing'; country='IN'; timezone='Asia/Calcutta'; business_use_case='Local isolated tests'; created_by=$userB.id } | Out-Null
 Insert-Local 'organization_members' @{ organization_id=$orgA; user_id=$userA.id; role='owner' } | Out-Null
 Insert-Local 'organization_members' @{ organization_id=$orgB; user_id=$userB.id; role='owner' } | Out-Null
 Insert-Local 'organization_members' @{ organization_id=$orgA; user_id=$userC.id; role='admin' } | Out-Null
 Insert-Local 'organization_members' @{ organization_id=$orgB; user_id=$userA.id; role='member' } | Out-Null
+Insert-Local 'organization_members' @{ organization_id=$orgA; user_id=$userE.id; role='viewer' } | Out-Null
 Insert-Local 'agents' @{ id=$agentA; organization_id=$orgA; name='E2E Agent A'; instructions='Local test agent'; language='en-US'; status='draft'; created_by=$userA.id } | Out-Null
 Insert-Local 'agents' @{ id=$agentB; organization_id=$orgB; name='E2E Agent B'; instructions='Local test agent'; language='en-US'; status='draft'; created_by=$userB.id } | Out-Null
 Insert-Local 'contacts' @{ id=$contactA; organization_id=$orgA; name='E2E Contact A'; email='contact-a@example.test'; phone='+15550000001'; consent_status='granted' } | Out-Null
+Insert-Local 'contacts' @{ id=$contactEligible2; organization_id=$orgA; name='E2E Contact Eligible 2'; email='eligible-2@example.test'; phone='+15550000006'; consent_status='granted' } | Out-Null
 Insert-Local 'contacts' @{ id=$contactUnknown; organization_id=$orgA; name='E2E Unknown Consent'; email='unknown@example.test'; phone='+15550000002'; consent_status='unknown' } | Out-Null
 Insert-Local 'contacts' @{ id=$contactRevoked; organization_id=$orgA; name='E2E Revoked Consent'; email='revoked@example.test'; phone='+15550000003'; consent_status='revoked' } | Out-Null
 Insert-Local 'contacts' @{ id=$contactOptedOut; organization_id=$orgA; name='E2E Opted Out'; email='opted-out@example.test'; phone='+15550000004'; consent_status='granted'; opted_out_at=(Get-Date).ToUniversalTime().ToString('o') } | Out-Null
@@ -104,12 +121,14 @@ Insert-Local 'campaigns' @{ id=$campaignB; organization_id=$orgB; agent_id=$agen
     @{ id=$userA.id; email=$emailA; password=$passwordA; organization_id=$orgA; agent_id=$agentA },
     @{ id=$userB.id; email=$emailB; password=$passwordB; organization_id=$orgB; agent_id=$agentB },
     @{ id=$userC.id; email=$emailC; password=$passwordC; organization_id=$orgA; agent_id=$agentA }
+    @{ id=$userD.id; email=$emailD; password=$passwordD; organization_id=$null; agent_id=$null },
+    @{ id=$userE.id; email=$emailE; password=$passwordE; organization_id=$orgA; agent_id=$agentA }
   )
   ids = @{
     organizations = @($orgA,$orgB)
     organization_members = @()
     agents = @($agentA,$agentB)
-    contacts = @($contactA,$contactUnknown,$contactRevoked,$contactOptedOut,$contactB)
+    contacts = @($contactA,$contactEligible2,$contactUnknown,$contactRevoked,$contactOptedOut,$contactB)
     campaigns = @($campaignA,$campaignB)
   }
 } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $metadataPath -Encoding UTF8

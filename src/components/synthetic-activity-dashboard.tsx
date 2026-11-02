@@ -13,6 +13,7 @@ import {
 } from "@/lib/simulation-activity";
 
 type View = "calls" | "analytics";
+export type PersistedAnalytics = { agents: number; campaigns: number; contacts: number; knowledge: number; consent: { granted: number; unknown: number; revoked: number; optedOut: number }; campaignStatuses: [string, number][] };
 const OUTCOMES: { value: ActivityOutcome; label: string; color: string }[] = [
   { value: "interested", label: "Interested", color: "#a78bfa" },
   { value: "callback_requested", label: "Callback requested", color: "#22d3ee" },
@@ -52,7 +53,7 @@ function Stat({ label, value, description }: { label: string; value: string | nu
   </div>;
 }
 
-export default function SyntheticActivityDashboard({ organizationId, view }: { organizationId: string; view: View }) {
+export default function SyntheticActivityDashboard({ organizationId, view, persistedMetrics }: { organizationId: string; view: View; persistedMetrics?: PersistedAnalytics | null }) {
   const { records, loaded } = useTabActivity(organizationId);
   const [outcome, setOutcome] = useState("all");
   const [days, setDays] = useState("30");
@@ -99,6 +100,21 @@ export default function SyntheticActivityDashboard({ organizationId, view }: { o
         Open simulation studio <ArrowRight size={16} />
       </Link>
     </div>
+
+    {!isCalls && <section className="card" aria-label="Persisted organization analytics" style={{ marginTop: 24 }}>
+      <div className="eyebrow">Persisted organization data</div>
+      <h2 style={{ margin: "8px 0 4px", fontSize: 22 }}>Configuration snapshot</h2>
+      <p className="muted" style={{ marginTop: 0 }}>Authorized current counts only. This view does not infer trends, conversions, revenue, or completed calls.</p>
+      {!persistedMetrics ? <p role="alert">Organization analytics are temporarily unavailable.</p> : <>
+        <div className="kpis" style={{ marginTop: 16 }}>
+          {[["Agents", persistedMetrics.agents], ["Campaigns", persistedMetrics.campaigns], ["Contacts", persistedMetrics.contacts], ["Knowledge sources", persistedMetrics.knowledge]].map(([label, value]) => <Stat key={label as string} label={label as string} value={value as number} description="Current tenant-scoped count" />)}
+        </div>
+        <div className="grid" style={{ marginTop: 16, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+          <section aria-label="Consent distribution"><h3>Consent distribution</h3>{[["Granted and eligible", persistedMetrics.consent.granted, "#34d399"], ["Unknown", persistedMetrics.consent.unknown, "#fbbf24"], ["Revoked", persistedMetrics.consent.revoked, "#f87171"], ["Opted out", persistedMetrics.consent.optedOut, "#fb923c"]].map(([label, value, color]) => <div key={label as string} style={{ marginBottom: 12 }}><div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>{label as string}</span><strong>{value as number}</strong></div><div role="img" aria-label={`${label as string}: ${value as number}`} style={{ height: 8, marginTop: 5, borderRadius: 8, background: "#282b40" }}><div style={{ width: `${persistedMetrics.contacts ? Math.min(100, ((value as number) / persistedMetrics.contacts) * 100) : 0}%`, height: "100%", background: color as string, borderRadius: 8 }} /></div></div>)}</section>
+          <section aria-label="Campaign status summary"><h3>Campaign configuration</h3>{persistedMetrics.campaignStatuses.length === 0 ? <p className="muted">No campaigns configured.</p> : persistedMetrics.campaignStatuses.map(([status, count]) => <p key={status} style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--line)", padding: "9px 0", margin: 0 }}><span>{status.replaceAll("_", " ")}</span><strong>{count}</strong></p>)}<p className="muted" style={{ fontSize: 12, marginBottom: 0 }}>Status counts are configuration records, not campaign outcomes.</p></section>
+        </div>
+      </>}
+    </section>}
 
     <div className="notice" style={{ marginTop: 24, display: "flex", gap: 12, alignItems: "flex-start" }}>
       <ShieldCheck size={20} style={{ flexShrink: 0 }} />

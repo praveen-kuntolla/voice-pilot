@@ -1,6 +1,6 @@
 import type { SimulationPreflight, SimulationPreflightContact } from "@/lib/campaign-simulation";
 
-export type CampaignReadiness = { simulationOnly: true; hypotheticalOrganizationPool: true; ready: boolean; counts: { selected: number; total: number; eligible: number; unknownConsent: number; optedOut: number; invalid: number }; reasons: string[] };
+export type CampaignReadiness = { simulationOnly: true; hypotheticalOrganizationPool: true; ready: boolean; counts: { selected: number; total: number; grantedConsent: number; eligible: number; unknownConsent: number; optedOut: number; invalid: number }; reasons: string[] };
 const reasonFor = (contact: SimulationPreflightContact) => contact.reason?.toLowerCase() ?? "";
 
 export function summarizeCampaignReadiness(snapshot: SimulationPreflight, selectedIds?: ReadonlySet<string>): CampaignReadiness {
@@ -11,5 +11,5 @@ export function summarizeCampaignReadiness(snapshot: SimulationPreflight, select
   const reasons = [...new Set(contacts.filter((contact) => !contact.eligible && contact.reason).map((contact) => contact.reason as string))];
   if (contacts.length === 0) reasons.push("No contacts are selected for this hypothetical pool.");
   if (contacts.filter((contact) => contact.eligible).length === 0) reasons.push("No eligible contacts are available for simulation.");
-  return { simulationOnly: true, hypotheticalOrganizationPool: true, ready: contacts.some((contact) => contact.eligible), counts: { selected: contacts.length, total: snapshot.contacts.length, eligible: contacts.filter((contact) => contact.eligible).length, unknownConsent, optedOut, invalid }, reasons: [...new Set(reasons)] };
+  return { simulationOnly: true, hypotheticalOrganizationPool: true, ready: contacts.some((contact) => contact.eligible), counts: { selected: contacts.length, total: snapshot.contacts.length, grantedConsent: snapshot.contacts.filter((contact) => contact.consent_status === "granted" && !contact.opted_out_at).length, eligible: contacts.filter((contact) => contact.eligible).length, unknownConsent, optedOut, invalid }, reasons: [...new Set(reasons)] };
 }

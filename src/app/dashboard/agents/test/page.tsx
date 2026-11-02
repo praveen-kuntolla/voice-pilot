@@ -14,8 +14,13 @@ import {
   type VoiceEvent,
 } from "@/lib/voice-runtime";
 import { redactTranscriptLines } from "@/lib/transcript-redaction";
+import { evaluateOfflineAgent } from "@/lib/offline-agent-evaluation";
+import { createRoot, type Root } from "react-dom/client";
+import { OfflineAgentEvaluationPanel } from "@/components/offline-agent-evaluation-panel";
+import { SyntheticKnowledgeRetrievalPanel } from "@/components/synthetic-knowledge-retrieval-panel";
+import { OFFLINE_PERFORMANCE_EVENT, clearOfflineEvaluationSnapshot, turnOutcomes, writeOfflineEvaluationSnapshot } from "@/lib/offline-agent-performance";
 
-type Agent = { id: string; name: string; description?: string | null; instructions?: string | null; language?: string | null; voice?: string | null; status?: string | null };
+type Agent = { id: string; name: string; organization_id?: string; description?: string | null; instructions?: string | null; language?: string | null; voice_id?: string | null; voice?: string | null; status?: string | null };
 type Preflight = { allowed?: boolean; organizationId?: string; agentId?: string; checks?: Array<{ id: string; passed: boolean; message: string }>; error?: string };
 const activeStates = new Set(["listening", "transcribing", "thinking", "speaking"]);
 
@@ -36,9 +41,9 @@ export default function AgentTest() {
       const body = await response.json() as { agents?: Agent[]; error?: string };
       if (!response.ok) throw new Error(body.error ?? "Unable to load agents.");
       if (mountedRef.current && generation === generationRef.current) {
-        const loadedAgents = body.agents ?? [];
+        const loadedAgents = (body.agents ?? []).map((agent) => ({ ...agent, voice: agent.voice_id ?? null }));
         setAgents(loadedAgents);
-        if (requestedAgentId && loadedAgents.some((agent) => agent.id === requestedAgentId)) setAgentId(requestedAgentId);
+        if (requestedAgentId && loadedAgents.some((agent) => agent.id === requestedAgentId && agent.status !== "archived")) setAgentId(requestedAgentId);
       }
     }).catch((cause: unknown) => { if (mountedRef.current && generation === generationRef.current) setLoadError(cause instanceof Error ? cause.message : "Unable to load agents."); })
       .finally(() => { if (mountedRef.current && generation === generationRef.current) setLoadingAgents(false); });
@@ -46,7 +51,7 @@ export default function AgentTest() {
   }, []);
 
   const visibleAgents = useMemo(() => agents.filter((agent) => agent.name.toLowerCase().includes(search.toLowerCase())), [agents, search]);
-  const selectedAgent = agents.find((agent) => agent.id === agentId) ?? null;
+  const selectedAgent = agents.find((agent) => agent.id === agentId && agent.status !== "archived") ?? null;
   const isActive = activeStates.has(simulationState);
   const limitReached = (controller?.turnCount ?? 0) >= MAX_SIMULATION_TURNS;
   const failedSession = controller?.state === "failed";
@@ -55,8 +60,18 @@ export default function AgentTest() {
     && simulationState !== "preflighting" && events.length > 0;
   const nextPreset = getSimulationPreset(presetId);
 
-  function syncController(value: LocalConversationController) { if (!mountedRef.current) return; setController(value); setSimulationState(value.state); setEvents([...value.events]); }
-  function reset() { generationRef.current++; preflightAbortRef.current?.abort(); preflightAbortRef.current = null; controllerRef.current?.end(); controllerRef.current = null; setController(null); setPreflight(null); setSimulationState("idle"); setEvents([]); setError(""); setExportPreview(""); setReviewed(false); setPresetTurn(0); }
+  useEffect(() => {
+    const section = document.querySelector("main.main.container .section");
+    if (!section) return;
+    let host = section.querySelector<HTMLDivElement>("[data-offline-evaluation-host]");
+    if (!host) { host = document.createElement("div"); host.dataset.offlineEvaluationHost = "true"; section.appendChild(host); }
+    const root: Root = createRoot(host);
+    root.render(<><OfflineAgentEvaluationPanel agent={selectedAgent ? { name: selectedAgent.name, language: selectedAgent.language, voice: selectedAgent.voice, instructions: selectedAgent.instructions } : undefined} scenario={nextPreset?.label} state={simulationState} turns={controller?.turnCount ?? 0} preflightAllowed={!!preflight && isAuthorizedAgentTestPreflight(preflight, agentId, controller?.config.organizationId)} exportEligible={exportAuthorized} onReset={reset} /><SyntheticKnowledgeRetrievalPanel /></>);
+    return () => root.unmount();
+  }, [selectedAgent, nextPreset, simulationState, controller, preflight, agentId, exportAuthorized]);
+
+  function syncController(value: LocalConversationController, authorizedPreflight = preflight) { if (!mountedRef.current) return; setController(value); setSimulationState(value.state); setEvents([...value.events]); if (authorizedPreflight?.organizationId && agentId) { writeOfflineEvaluationSnapshot({ version: 1, organizationId: authorizedPreflight.organizationId, agentId, hasInstructions: Boolean(selectedAgent?.instructions?.trim()), language: selectedAgent?.language || value.config.language, voiceId: selectedAgent?.voice_id ?? selectedAgent?.voice ?? null, state: value.state, turns: value.turnCount, preflightAllowed: true, outcomes: turnOutcomes(value.events), updatedAt: new Date().toISOString() }); window.dispatchEvent(new Event(OFFLINE_PERFORMANCE_EVENT)); } }
+  function reset() { const organizationId = preflight?.organizationId ?? controllerRef.current?.config.organizationId ?? selectedAgent?.organization_id; if (organizationId && agentId) clearOfflineEvaluationSnapshot(organizationId, agentId); generationRef.current++; preflightAbortRef.current?.abort(); preflightAbortRef.current = null; controllerRef.current?.end(); controllerRef.current = null; setController(null); setPreflight(null); setSimulationState("idle"); setEvents([]); setError(""); setExportPreview(""); setReviewed(false); setPresetTurn(0); window.dispatchEvent(new Event(OFFLINE_PERFORMANCE_EVENT)); }
   function invalidateSession() {
     generationRef.current++;
     preflightAbortRef.current?.abort();
@@ -114,7 +129,7 @@ export default function AgentTest() {
       setController(nextController); setSimulationState("listening");
       await nextController.runSimulatedTurn(simulatedSpeech, simulationMode);
       if (!mountedRef.current || generation !== generationRef.current || abort.signal.aborted || controllerRef.current !== nextController) return;
-      syncController(nextController);
+      syncController(nextController, result);
       if (nextController.state === "failed") setError(nextController.events.at(-1)?.text ?? "The mock provider failed.");
     } catch (cause: unknown) {
       if (abort.signal.aborted || generation !== generationRef.current || !mountedRef.current) return;
@@ -131,8 +146,9 @@ export default function AgentTest() {
   function eventLines() { return events.map((event) => `Turn ${event.turnId} · [${event.state}/${event.kind}] ${event.text}`).filter(Boolean); }
   function buildExport(format: "txt" | "json") {
     if (!selectedAgent || !exportAuthorized) return "";
+    const evaluation = evaluateOfflineAgent({ instructions: selectedAgent.instructions, language: selectedAgent.language, voiceId: selectedAgent.voice, simulationState, turns: events.length, preflightAllowed: true });
     const safeAgent = redactTranscriptLines([selectedAgent.name])[0], safeChecks = (preflight.checks ?? []).map((check) => ({ ...check, message: redactTranscriptLines([check.message])[0] })), safeEvents = redactTranscriptLines(eventLines());
-    const payload = { simulationOnly: true, label: "SIMULATION ONLY — NO AUDIO / NO LIVE PROVIDERS", exportedAt: new Date().toISOString(), agent: safeAgent, preflight: safeChecks, events: safeEvents, privacyNotice: "Best-effort redaction applied locally; review before sharing." };
+    const payload = { simulationOnly: true, label: "SIMULATION ONLY — NO AUDIO / NO LIVE PROVIDERS", exportedAt: new Date().toISOString(), agent: safeAgent, preflight: safeChecks, evaluation, events: safeEvents, privacyNotice: "Rule-based synthetic evaluation only; no quality score or customer outcome is inferred." };
     return format === "json" ? JSON.stringify(payload, null, 2) : ["SIMULATION ONLY — NO AUDIO / NO LIVE PROVIDERS", `Agent: ${payload.agent}`, `Exported: ${payload.exportedAt}`, payload.privacyNotice, "Policy preflight:", ...payload.preflight.map((check) => `- ${check.passed ? "PASS" : "BLOCK"}: ${check.message}`), "Conversation events:", ...safeEvents].join("\n");
   }
   function previewExport(format: "txt" | "json") { if (!exportAuthorized) return; setExportFormat(format); setExportPreview(buildExport(format)); setReviewed(false); }

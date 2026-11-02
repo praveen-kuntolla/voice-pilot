@@ -6,7 +6,7 @@ export async function GET(_: Request, context: Context) {
   const { id } = await context.params; const { s, user, membership } = await currentMembership();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!membership) return NextResponse.json({ error: "Organization membership required" }, { status: 403 });
-  const campaignResult = await s.from("campaigns").select("id,name,status,organization_id,agent_id,consent_required").eq("id", id).eq("organization_id", membership.organization_id).maybeSingle();
+  const campaignResult = await s.from("campaigns").select("id,name,status,organization_id,agent_id,consent_required,timezone,start_hour,end_hour").eq("id", id).eq("organization_id", membership.organization_id).maybeSingle();
   if (campaignResult.error || !campaignResult.data) return NextResponse.json({ error: "Campaign is not available for this organization" }, { status: 404 });
   const campaign = campaignResult.data;
   if (!["draft", "test", "paused"].includes(campaign.status)) return NextResponse.json({ error: "Campaign state does not permit mock simulation" }, { status: 409 });
