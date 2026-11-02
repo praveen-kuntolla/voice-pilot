@@ -1,0 +1,3 @@
+import { describe, expect, it } from "vitest";
+import { isOfflineRecoveryState, offlineRecoveryStateLabel } from "@/lib/offline-recovery";
+describe("offline recovery dashboard contract", () => { it("labels synthetic recovery states", () => { expect(offlineRecoveryStateLabel("termination_unconfirmed")).toBe("Termination unconfirmed"); expect(offlineRecoveryStateLabel("released")).toBe("Released"); }); it("rejects unknown state values", () => { expect(isOfflineRecoveryState("provider_connected")).toBe(false); expect(offlineRecoveryStateLabel("provider_connected")).toBe("Unknown recovery state"); }); });

@@ -1,0 +1,34 @@
+{
+  "contract_version": "offline.voice.pipeline.v1",
+  "session_request": {
+    "contract_version": "offline.voice.pipeline.v1",
+    "session_id": "exchange-session",
+    "organization_id": "exchange-org",
+    "agent_id": "exchange-agent",
+    "actor_id": "exchange-actor",
+    "expires_at_ms": 10000,
+    "max_turn_chars": 1000,
+    "provider_mode": "mock",
+    "simulation_only": true,
+    "no_recording": true
+  },
+  "typescript_produced_events": [
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"ts:1","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":1,"turn_id":0,"event_type":"session_started","state":"active","metadata":{"simulation_only":true,"action":"started"}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"ts:2","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":2,"turn_id":1,"event_type":"turn_started","state":"active","metadata":{"simulation_only":true}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"ts:3","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":3,"turn_id":1,"event_type":"transcript","state":"active","metadata":{"simulation_only":true,"stage":"transcribing","text_length":12,"text_sha256_prefix":"0123456789abcdef"}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"ts:4","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":4,"turn_id":1,"event_type":"response","state":"active","metadata":{"simulation_only":true,"stage":"thinking"}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"ts:5","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":5,"turn_id":1,"event_type":"speech","state":"active","metadata":{"simulation_only":true,"stage":"speaking"}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"ts:6","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":6,"turn_id":1,"event_type":"interrupted","state":"interrupted","metadata":{"simulation_only":true,"action":"interrupt"}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"ts:7","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":7,"turn_id":2,"event_type":"emergency_stopped","state":"stopped","metadata":{"simulation_only":true,"action":"emergency_stop"}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"ts:8","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":8,"turn_id":2,"event_type":"cleanup_completed","state":"ended","metadata":{"simulation_only":true,"action":"cleanup"}}
+  ],
+  "python_produced_events": [
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"py:1","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":1,"turn_id":0,"event_type":"session_started","state":"active","metadata":{"simulation_only":true,"action":"started"}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"py:2","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":2,"turn_id":1,"event_type":"turn_started","state":"active","metadata":{"simulation_only":true}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"py:3","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":3,"turn_id":1,"event_type":"transcript","state":"active","metadata":{"simulation_only":true,"stage":"transcribing","text_length":12,"text_sha256_prefix":"fedcba9876543210"}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"py:4","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":4,"turn_id":1,"event_type":"response","state":"active","metadata":{"simulation_only":true,"stage":"thinking"}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"py:5","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":5,"turn_id":1,"event_type":"speech","state":"active","metadata":{"simulation_only":true,"stage":"speaking"}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"py:6","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":6,"turn_id":1,"event_type":"cancelled","state":"cancelled","metadata":{"simulation_only":true,"action":"cancel"}},
+    {"contract_version":"offline.voice.pipeline.v1","event_id":"py:7","session_id":"exchange-session","organization_id":"exchange-org","agent_id":"exchange-agent","actor_id":"exchange-actor","sequence":7,"turn_id":1,"event_type":"cleanup_completed","state":"ended","metadata":{"simulation_only":true,"action":"cleanup"}}
+  ]
+}

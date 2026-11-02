@@ -24,9 +24,11 @@ test("authenticated dashboard links open implemented settings and simulation scr
   const routes = {
     Overview: "/dashboard",
     Agents: "/dashboard/agents",
+    "Knowledge Base": "/dashboard/knowledge",
     Contacts: "/dashboard/contacts",
     Campaigns: "/dashboard/campaigns",
     Calls: "/dashboard/calls",
+    Recovery: "/dashboard/recovery",
     Analytics: "/dashboard/analytics",
     Settings: "/settings",
   } as const;
@@ -35,8 +37,17 @@ test("authenticated dashboard links open implemented settings and simulation scr
     await expect(sidebar.getByRole("link", { name, exact: true })).toHaveAttribute("href", href);
   }
   await expect(sidebar.locator('a[href="/dashboard/settings"]')).toHaveCount(0);
+  await expect(sidebar.getByRole("link", { name: "Overview", exact: true })).toHaveAttribute("aria-current", "page");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await expect(page.getByRole("button", { name: "Close navigation" })).toBeVisible();
+  await page.getByRole("button", { name: "Close navigation" }).click();
+  await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await sidebar.getByRole("link", { name: "Knowledge Base", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/knowledge/);
 
-  await sidebar.getByRole("link", { name: "Settings" }).click();
+  await page.goto("/settings");
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole("heading", { name: "Organization settings" })).toBeVisible();
   await page.getByRole("button", { name: "Provider governance" }).click();
@@ -44,11 +55,11 @@ test("authenticated dashboard links open implemented settings and simulation scr
 
   await page.getByRole("link", { name: /back to dashboard/i }).click();
   await expect(page.getByRole("heading", { name: /workspace overview/i })).toBeVisible();
-  await page.locator("aside.side").getByRole("link", { name: "Calls", exact: true }).click();
+  await page.goto("/dashboard/calls");
   await expect(page).toHaveURL(/\/dashboard\/calls/);
   await expect(page.getByRole("heading", { name: "Simulated calls" })).toBeVisible();
   await expect(page.getByText("SIMULATION ONLY.", { exact: false }).first()).toBeVisible();
-  await page.getByRole("link", { name: "Analytics", exact: true }).click();
+  await page.goto("/dashboard/analytics");
   await expect(page).toHaveURL(/\/dashboard\/analytics/);
   await expect(page.getByRole("heading", { name: "Simulation analytics" })).toBeVisible();
   await page.getByRole("link", { name: /open simulation studio/i }).click();

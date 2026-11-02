@@ -4,7 +4,7 @@ The module is safe to import without livekit-agents installed. Framework imports
 and server startup occur only after both worker and realtime flags are enabled.
 """
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 import asyncio
 import json
 import re
@@ -22,6 +22,88 @@ class RoomConfig:
     organization_id: str
     agent_id: str
     session_id: str
+
+
+@dataclass(frozen=True)
+class AgentSessionPlan:
+    """Tenant-bound plan passed to the official AgentSession seam.
+
+    The plan carries only validated runtime data. It never instantiates STT,
+    LLM, TTS, or audio I/O; provider activation remains an explicit future
+    deployment decision behind the existing real-mode gates.
+    """
+
+    room: RoomConfig
+    runtime: RuntimeConfig
+    instructions: str
+
+
+class AgentSessionFactory(Protocol):
+    def __call__(self, **kwargs: Any) -> Any: ...
+
+
+class ReservationReleaser(Protocol):
+    async def __call__(self, plan: AgentSessionPlan) -> bool: ...
+
+
+def build_agent_session(
+    session_factory: AgentSessionFactory,
+    providers: Any,
+    *,
+    vad: Any = None,
+    turn_detection: Any = None,
+) -> Any:
+    """Construct the official AgentSession shape without importing providers.
+
+    The production caller supplies LiveKit's AgentSession class only after the
+    existing realtime/provider gates pass. Tests inject a fake factory, so this
+    orchestration path never contacts a provider in the default environment.
+    """
+    options: dict[str, Any] = {"stt": providers.stt, "llm": providers.llm, "tts": providers.tts}
+    if vad is not None:
+        options["vad"] = vad
+    if turn_detection is not None:
+        options["turn_detection"] = turn_detection
+    return session_factory(**options)
+
+
+def validate_agent_identity(plan: AgentSessionPlan, participant_identity: str) -> None:
+    if not participant_identity or participant_identity != plan.runtime.authorized_browser_identity:
+        raise PermissionError("worker participant identity is not authorized for this session")
+
+
+async def run_agent_session(session: Any, agent: Any, room: Any, plan: AgentSessionPlan, release: ReservationReleaser) -> None:
+    """Run and durably release one authorized session on every exit path."""
+    session_error: BaseException | None = None
+    try:
+        await session.start(room=room, agent=agent)
+        await session.generate_reply(instructions=f"Greet the user in {plan.runtime.language}.")
+    except BaseException as exc:
+        session_error = exc
+    finally:
+        close_error: BaseException | None = None
+        try:
+            close = getattr(session, "aclose", None)
+            if close is not None:
+                await close()
+        except BaseException as exc:
+            close_error = exc
+        # SDK close failure leaves provider termination uncertain. Do not
+        # release durable capacity until an authoritative reconciler confirms
+        # termination; the Phase 12F transport owns that evidence boundary.
+        if close_error is not None:
+            raise close_error
+        released = await release(plan)
+        if not released:
+            raise RuntimeError("durable worker reservation release was not confirmed")
+    if session_error is not None:
+        raise session_error
+
+
+async def build_agent_session_plan(loader: ConfigLoader, room_name: str) -> AgentSessionPlan:
+    room = parse_room_name(room_name)
+    runtime = await load_runtime_config(loader, room_name)
+    return AgentSessionPlan(room=room, runtime=runtime, instructions=runtime.instructions)
 
 def parse_room_name(name: str) -> RoomConfig:
     parts = name.split(":")
@@ -43,7 +125,7 @@ async def load_runtime_config(loader: ConfigLoader, room_name: str) -> RuntimeCo
         raise PermissionError("worker configuration tenant mismatch")
     return runtime
 
-def create_livekit_server(config: WorkerConfig, loader: ConfigLoader):
+def create_livekit_server(config: WorkerConfig, loader: ConfigLoader, release_session: ReservationReleaser | None = None):
     """Create the official AgentServer only when explicit realtime config is valid.
 
     This function is not called by local mock mode. The API shape follows the
@@ -54,6 +136,8 @@ def create_livekit_server(config: WorkerConfig, loader: ConfigLoader):
         validate_connectivity_config(config)
     else:
         validate_realtime_config(config)
+        if release_session is None:
+            raise RuntimeError("trusted worker reservation release contract is unavailable")
         # No approved real provider adapters exist yet. Fail before registering
         # a job so a worker cannot connect and then fail during session setup.
         build_provider_bundle(ProviderConfig(config.stt_provider or "", config.llm_provider or "", config.tts_provider or ""), mode="real")
@@ -76,15 +160,16 @@ def create_livekit_server(config: WorkerConfig, loader: ConfigLoader):
         if connectivity:
             await run_connectivity_session(ctx, loader, AutoSubscribe.SUBSCRIBE_NONE)
             return
-        runtime = await load_runtime_config(loader, ctx.room.name)
+        plan = await build_agent_session_plan(loader, ctx.room.name)
+        participant = await ctx.wait_for_participant()
+        validate_agent_identity(plan, participant.identity)
         providers = build_provider_bundle(
             ProviderConfig(stt=config.stt_provider or "", llm=config.llm_provider or "", tts=config.tts_provider or ""),
             mode=config.provider_mode,
         )
-        session = AgentSession(stt=providers.stt, llm=providers.llm, tts=providers.tts)
-        agent = Agent(instructions=runtime.instructions)
-        await session.start(room=ctx.room, agent=agent)
-        await session.generate_reply(instructions=f"Greet the user in {runtime.language}.")
+        session = build_agent_session(AgentSession, providers)
+        agent = Agent(instructions=plan.instructions)
+        await run_agent_session(session, agent, ctx.room, plan, release_session)
 
     return server, cli
 
