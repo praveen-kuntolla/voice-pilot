@@ -102,6 +102,18 @@ def test_agent_session_fails_closed_when_release_is_not_confirmed():
     with pytest.raises(RuntimeError, match="release"):
         asyncio.run(run_agent_session(Session(), object(), object(), plan, release))
 
+def test_agent_session_releases_when_sdk_close_fails():
+    class Session:
+        async def start(self, **kwargs): pass
+        async def generate_reply(self, **kwargs): pass
+        async def aclose(self): raise RuntimeError("close failed")
+    plan = AgentSessionPlan(parse_room_name(ROOM), RuntimeConfig(ORG, AGENT, "en", "Safe", session_id=SESSION), "Safe")
+    released = []
+    async def release(value): released.append(value.room.session_id); return True
+    with pytest.raises(RuntimeError, match="close failed"):
+        asyncio.run(run_agent_session(Session(), object(), object(), plan, release))
+    assert released == []
+
 def test_realtime_server_refuses_missing_release_contract():
     with pytest.raises(RuntimeError, match="release contract"):
         create_livekit_server(enabled_config(), lambda *_: None)

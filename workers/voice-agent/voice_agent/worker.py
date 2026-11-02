@@ -74,15 +74,30 @@ def validate_agent_identity(plan: AgentSessionPlan, participant_identity: str) -
 
 async def run_agent_session(session: Any, agent: Any, room: Any, plan: AgentSessionPlan, release: ReservationReleaser) -> None:
     """Run and durably release one authorized session on every exit path."""
+    session_error: BaseException | None = None
     try:
         await session.start(room=room, agent=agent)
         await session.generate_reply(instructions=f"Greet the user in {plan.runtime.language}.")
+    except BaseException as exc:
+        session_error = exc
     finally:
-        close = getattr(session, "aclose", None)
-        if close is not None:
-            await close()
-        if not await release(plan):
+        close_error: BaseException | None = None
+        try:
+            close = getattr(session, "aclose", None)
+            if close is not None:
+                await close()
+        except BaseException as exc:
+            close_error = exc
+        # SDK close failure leaves provider termination uncertain. Do not
+        # release durable capacity until an authoritative reconciler confirms
+        # termination; the Phase 12F transport owns that evidence boundary.
+        if close_error is not None:
+            raise close_error
+        released = await release(plan)
+        if not released:
             raise RuntimeError("durable worker reservation release was not confirmed")
+    if session_error is not None:
+        raise session_error
 
 
 async def build_agent_session_plan(loader: ConfigLoader, room_name: str) -> AgentSessionPlan:

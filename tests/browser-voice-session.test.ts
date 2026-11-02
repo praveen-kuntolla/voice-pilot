@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { BrowserVoiceDisconnectController, isBrowserVoiceActivationEnabled } from "@/lib/browser-voice-session";
+import { BrowserVoiceDisconnectController, isBrowserVoiceActivationEnabled, nextBrowserVoiceLifecycleState } from "@/lib/browser-voice-session";
 import { POST } from "@/app/api/livekit/browser-session/route";
 import { currentMembership } from "@/lib/authz";
 
@@ -18,8 +18,44 @@ describe("browser voice activation boundary", () => {
     const controller = new BrowserVoiceDisconnectController({ cancelWorker: op("cancel-worker"), removeParticipant: op("remove-participant"), closeRoom: op("close-room"), revokeAdmission: op("revoke-admission"), reconcileUsage: op("reconcile-usage"), releaseReservations: op("release-reservations") });
     const context = { sessionId: "session", organizationId: "org", agentId: "agent", actorId: "actor" };
     expect(await controller.disconnect(context)).toBe(true);
+    expect(controller.state).toBe("released");
     expect(await controller.disconnect(context)).toBe(false);
+    expect(controller.state).toBe("released");
     expect(calls).toEqual(["cancel-worker", "remove-participant", "close-room", "revoke-admission", "reconcile-usage", "release-reservations"]);
+  });
+
+  it("continues cleanup after an operation fails and reports failure", async () => {
+    const calls: string[] = [];
+    const op = (name: string, failure = false) => vi.fn(async () => { calls.push(name); if (failure) throw new Error(name); });
+    const controller = new BrowserVoiceDisconnectController({ cancelWorker: op("cancel-worker", true), removeParticipant: op("remove-participant"), closeRoom: op("close-room"), revokeAdmission: op("revoke-admission"), reconcileUsage: op("reconcile-usage"), releaseReservations: op("release-reservations") });
+    const context = { sessionId: "session", organizationId: "org", agentId: "agent", actorId: "actor" };
+    expect(await controller.disconnect(context)).toBe(false);
+    expect(controller.state).toBe("termination_unconfirmed");
+    expect(calls).toEqual(["cancel-worker", "remove-participant", "close-room", "revoke-admission"]);
+    expect(await controller.disconnect(context)).toBe(false);
+  });
+
+  it("does not release capacity when termination is uncertain", async () => {
+    const calls: string[] = [];
+    const op = (name: string, failure = false) => vi.fn(async () => { calls.push(name); if (failure) throw new Error(name); });
+    const controller = new BrowserVoiceDisconnectController({ cancelWorker: op("cancel-worker"), removeParticipant: op("remove-participant"), closeRoom: op("close-room", true), revokeAdmission: op("revoke-admission"), reconcileUsage: op("reconcile-usage"), releaseReservations: op("release-reservations") });
+    const context = { sessionId: "session", organizationId: "org", agentId: "agent", actorId: "actor" };
+    expect(await controller.disconnect(context)).toBe(false);
+    expect(calls).toEqual(["cancel-worker", "remove-participant", "close-room", "revoke-admission"]);
+  });
+
+  it("records reconciliation when confirmed cleanup cannot release capacity", async () => {
+    const op = (failure = false) => vi.fn(async () => { if (failure) throw new Error("offline failure"); });
+    const controller = new BrowserVoiceDisconnectController({ cancelWorker: op(), removeParticipant: op(), closeRoom: op(), revokeAdmission: op(), reconcileUsage: op(true), releaseReservations: op() });
+    const context = { sessionId: "session", organizationId: "org", agentId: "agent", actorId: "actor" };
+    expect(await controller.disconnect(context)).toBe(false);
+    expect(controller.state).toBe("awaiting_reconciliation");
+  });
+
+  it("accepts only ordered lifecycle transitions", () => {
+    expect(nextBrowserVoiceLifecycleState("idle", "authorizing")).toBe("authorizing");
+    expect(nextBrowserVoiceLifecycleState("failed", "ending")).toBe("ending");
+    expect(() => nextBrowserVoiceLifecycleState("ended", "connected")).toThrow("invalid browser voice lifecycle transition");
   });
 
   it("rejects unauthenticated and disabled browser admission before token issuance", async () => {
