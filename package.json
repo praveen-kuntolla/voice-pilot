@@ -17,7 +17,7 @@
     "livekit-client": "^2.23.0",
     "livekit-server-sdk": "^2.19.1",
     "lucide-react": "latest",
-    "next": "latest",
+    "next": "^16.4.6",
     "pg": "^8.23.1",
     "react": "latest",
     "react-dom": "latest",
