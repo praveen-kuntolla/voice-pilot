@@ -22,6 +22,11 @@ export type LeaseResult =
 
 type LeaseFailureReason = Extract<LeaseResult, { ok: false }>['reason'];
 
+/** Only a reconciler-provided provider signal can authorize capacity release. */
+export type WorkerTerminationEvidence =
+  | { source: "trusted_reconciler"; kind: "provider_terminated"; leaseId: string; generation: number; observedAt: number }
+  | { source: "worker" | "caller"; kind: "asserted"; leaseId: string; generation: number; observedAt: number };
+
 export class OfflineWorkerLeaseLifecycle {
   private lease: WorkerLease;
   private readonly revokedKeys = new Set<string>();
@@ -36,17 +41,18 @@ export class OfflineWorkerLeaseLifecycle {
   setAuditAvailable(available: boolean): void { this.auditAvailable = available; }
 
   requestCancellation(now: number, emergencyStop = false): LeaseResult {
-    if (emergencyStop) return this.transition(now, "cancellation_requested", false, "emergency_stop");
     if (this.lease.state === "released") return { ok: true, lease: this.lease, idempotent: true };
-    if (now >= this.lease.expiresAt) return this.markReconciliationRequired();
+    if (emergencyStop) return this.transition(now, "cancellation_requested", false, "emergency_stop");
+    if (now >= this.lease.expiresAt) return this.markReconciliationRequired(now);
     if (this.lease.state !== "active") return { ok: true, lease: this.lease, idempotent: true };
     return this.transition(now, "cancellation_requested", false);
   }
 
-  reportTermination(confirmed: boolean): LeaseResult {
+  reportTermination(evidence: WorkerTerminationEvidence): LeaseResult {
     if (this.lease.state === "released") return { ok: true, lease: this.lease, idempotent: true };
-    if (!confirmed) return this.transition(Date.now(), "termination_unconfirmed", false, "termination_unconfirmed");
-    return this.transition(Date.now(), "cancellation_requested", true);
+    if (!this.matchesEvidence(evidence)) return { ok: false, reason: "stale_worker" };
+    if (evidence.source !== "trusted_reconciler" || evidence.kind !== "provider_terminated") return { ok: false, reason: "termination_unconfirmed" };
+    return this.transition(evidence.observedAt, "cancellation_requested", true);
   }
 
   renew(workerKeyId: string, generation: number, expiresAt: number, now: number, emergencyStop = false): LeaseResult {
@@ -57,16 +63,17 @@ export class OfflineWorkerLeaseLifecycle {
   }
 
   release(workerKeyId: string, generation: number, now: number): LeaseResult {
+    if (workerKeyId !== this.lease.workerKeyId || generation !== this.lease.generation) return { ok: false, reason: "stale_worker" };
+    if (this.lease.state === "released") return { ok: true, lease: this.lease, idempotent: true };
     const access = this.workerAccess(workerKeyId, generation, now, false);
     if (!access.ok) return access;
-    if (this.lease.state === "released") return { ok: true, lease: this.lease, idempotent: true };
-    if (!this.lease.terminationConfirmed) return this.markReconciliationRequired();
+    if (!this.lease.terminationConfirmed) return this.markReconciliationRequired(now);
     return this.transition(now, "released", true);
   }
 
-  reconcile(now: number, terminationConfirmed: boolean): LeaseResult {
+  reconcile(now: number, evidence: WorkerTerminationEvidence): LeaseResult {
     if (this.lease.state === "released") return { ok: true, lease: this.lease, idempotent: true };
-    if (!terminationConfirmed) return this.markReconciliationRequired();
+    if (!this.matchesEvidence(evidence) || evidence.source !== "trusted_reconciler" || evidence.kind !== "provider_terminated") return this.markReconciliationRequired(now);
     if (now < this.lease.expiresAt && this.lease.state === "active") return { ok: false, reason: "reconciliation_required" };
     return this.transition(now, "released", true);
   }
@@ -75,13 +82,17 @@ export class OfflineWorkerLeaseLifecycle {
     if (emergencyStop) return { ok: false, reason: "emergency_stop" };
     if (this.revokedKeys.has(workerKeyId) || this.revokedKeys.has(this.lease.workerKeyId)) return { ok: false, reason: "revoked_key" };
     if (workerKeyId !== this.lease.workerKeyId || generation !== this.lease.generation) return { ok: false, reason: "stale_worker" };
-    if (now >= this.lease.expiresAt) return this.markReconciliationRequired();
+    if (now >= this.lease.expiresAt) return this.markReconciliationRequired(now);
     return { ok: true, lease: this.lease };
   }
 
-  private markReconciliationRequired(): LeaseResult {
-    if (this.lease.state !== "released") this.lease = { ...this.lease, state: "reconciliation_required", version: this.lease.version + 1 };
-    return { ok: false, reason: "reconciliation_required" };
+  private matchesEvidence(evidence: WorkerTerminationEvidence): boolean {
+    return evidence.leaseId === this.lease.leaseId && evidence.generation === this.lease.generation && Number.isFinite(evidence.observedAt) && evidence.observedAt > 0;
+  }
+
+  private markReconciliationRequired(now: number): LeaseResult {
+    if (this.lease.state === "released") return { ok: true, lease: this.lease, idempotent: true };
+    return this.transition(now, "reconciliation_required", false, "reconciliation_required");
   }
 
   private transition(_now: number, state: WorkerLeaseState, terminationConfirmed: boolean, failure?: LeaseFailureReason, patch: Partial<WorkerLease> = {}): LeaseResult {
